@@ -1,0 +1,49 @@
+name: データ定期取込
+
+on:
+  schedule:
+    # sync-day: 当日分の確定結果を取込む（レース終了後）+ 前日分の取りこぼし再取込
+    - cron: '50 14 * * *'  # 23:50 JST
+    - cron: '50 21 * * *'  # 06:50 JST（前日分の再取込）
+    # sync-series-stats: 得点率・前検タイムのスクレイピング（新シリーズ開始を随時検知）
+    - cron: '0 22 * * *'   # 07:00 JST
+    - cron: '0 2 * * *'    # 11:00 JST
+    - cron: '0 6 * * *'    # 15:00 JST
+    - cron: '0 10 * * *'   # 19:00 JST
+    - cron: '30 14 * * *'  # 23:30 JST
+  workflow_dispatch:
+    inputs:
+      date:
+        description: 'sync-dayに渡す日付 (YYYY-MM-DD、省略時は当日JST)'
+        required: false
+
+jobs:
+  sync-day-today:
+    if: github.event.schedule == '50 14 * * *' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: sync-day を呼び出す
+        run: |
+          DATE="${{ github.event.inputs.date }}"
+          URL="${{ secrets.APP_URL }}/api/cron/sync-day"
+          if [ -n "$DATE" ]; then URL="$URL?date=$DATE"; fi
+          curl -sf -X POST "$URL" -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
+
+  sync-day-yesterday:
+    if: github.event.schedule == '50 21 * * *'
+    runs-on: ubuntu-latest
+    steps:
+      - name: 前日分の日付を計算してsync-dayを呼び出す
+        run: |
+          YDATE=$(TZ=Asia/Tokyo date -d 'yesterday' +%Y-%m-%d)
+          curl -sf -X POST "${{ secrets.APP_URL }}/api/cron/sync-day?date=$YDATE" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
+
+  sync-series-stats:
+    if: github.event.schedule == '0 22 * * *' || github.event.schedule == '0 2 * * *' || github.event.schedule == '0 6 * * *' || github.event.schedule == '0 10 * * *' || github.event.schedule == '30 14 * * *'
+    runs-on: ubuntu-latest
+    steps:
+      - name: sync-series-stats を呼び出す
+        run: |
+          curl -sf -X POST "${{ secrets.APP_URL }}/api/cron/sync-series-stats" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
