@@ -1,0 +1,383 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>競艇データ分析アプリ - 設計仕様書</title>
+<style>
+  :root {
+    --bg: #FAF6F0;
+    --fg: #3d3530;
+    --card: #ffffff;
+    --accent: #967E76;
+    --accent-dark: #7a6b65;
+    --border: #e7dfd6;
+    --code-bg: #f3ede4;
+    --muted: #8a8078;
+    --box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #221f1c;
+      --fg: #ece5dc;
+      --card: #2c2825;
+      --accent: #c9a99a;
+      --accent-dark: #d9bdb0;
+      --border: #45403a;
+      --code-bg: #383330;
+      --muted: #b0a498;
+      --box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: -apple-system, "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, sans-serif;
+    line-height: 1.7;
+  }
+  .wrap {
+    max-width: 980px;
+    margin: 0 auto;
+    padding: 2.5rem 1.5rem 5rem;
+  }
+  h1 {
+    color: var(--accent);
+    font-size: 1.8rem;
+    margin-bottom: 0.2rem;
+  }
+  .subtitle {
+    color: var(--muted);
+    margin-bottom: 2.5rem;
+    font-size: 0.95rem;
+  }
+  h2 {
+    color: var(--accent);
+    border-bottom: 2px solid var(--border);
+    padding-bottom: 0.4rem;
+    margin-top: 3rem;
+    font-size: 1.3rem;
+  }
+  h3 {
+    font-size: 1.05rem;
+    margin-top: 1.8rem;
+    color: var(--fg);
+  }
+  p { margin: 0.6rem 0; }
+  code {
+    background: var(--code-bg);
+    padding: 0.1rem 0.4rem;
+    border-radius: 4px;
+    font-size: 0.9em;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  pre {
+    background: var(--code-bg);
+    padding: 1rem;
+    border-radius: 8px;
+    overflow-x: auto;
+    font-size: 0.85rem;
+    line-height: 1.5;
+  }
+  pre code { background: none; padding: 0; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1rem 0;
+    background: var(--card);
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: var(--box-shadow);
+    font-size: 0.9rem;
+  }
+  th, td {
+    padding: 0.55rem 0.8rem;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+  th {
+    background: var(--accent);
+    color: white;
+    font-weight: 600;
+  }
+  tr:last-child td { border-bottom: none; }
+  .card {
+    background: var(--card);
+    border-radius: 10px;
+    box-shadow: var(--box-shadow);
+    padding: 1.2rem 1.5rem;
+    margin: 1rem 0;
+  }
+  .tag {
+    display: inline-block;
+    background: var(--code-bg);
+    color: var(--accent-dark);
+    border-radius: 5px;
+    padding: 0.1rem 0.5rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+    margin-right: 0.3rem;
+  }
+  .flow {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    margin: 1.5rem 0;
+  }
+  .flow-row {
+    display: flex;
+    align-items: stretch;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+  }
+  .box {
+    background: var(--card);
+    border: 1.5px solid var(--border);
+    border-radius: 8px;
+    padding: 0.7rem 1rem;
+    box-shadow: var(--box-shadow);
+    flex: 1;
+    min-width: 180px;
+    font-size: 0.88rem;
+  }
+  .box.accent {
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 10%, var(--card));
+  }
+  .box b { display: block; color: var(--accent); margin-bottom: 0.2rem; font-size: 0.85rem; }
+  .box .small { color: var(--muted); font-size: 0.78rem; }
+  .arrow {
+    text-align: center;
+    color: var(--muted);
+    font-size: 1.1rem;
+    line-height: 1;
+  }
+  .arrow-h {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--muted);
+    font-size: 1.3rem;
+    padding: 0 0.3rem;
+  }
+  ul, ol { padding-left: 1.4rem; }
+  li { margin: 0.3rem 0; }
+  .note {
+    border-left: 3px solid var(--accent);
+    background: color-mix(in srgb, var(--accent) 8%, var(--card));
+    padding: 0.7rem 1rem;
+    border-radius: 0 6px 6px 0;
+    font-size: 0.9rem;
+    margin: 1rem 0;
+  }
+  .grid2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+  }
+  @media (max-width: 700px) {
+    .grid2 { grid-template-columns: 1fr; }
+  }
+  a { color: var(--accent-dark); }
+  .path { font-family: ui-monospace, monospace; font-size: 0.85em; color: var(--accent-dark); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>競艇データ分析アプリ 設計仕様書</h1>
+<p class="subtitle">24競艇場 × 6指標のマトリクス表示アプリ。Next.js 16 + Supabase + Vercel + GitHub Actions構成。</p>
+
+<h2>1. 全体構成</h2>
+<p>
+  外部の2つのデータソース（BoatraceOpenAPIとboatrace.jp公式サイト）から定期的にデータを取得してSupabaseに蓄積し、
+  Next.jsアプリがそのデータを読み出して集計・表示する。データ取込のトリガーはGitHub Actionsの定期実行（cron）で、
+  Vercel上にホストされたAPI routeを呼び出す構成。
+</p>
+
+<div class="flow">
+  <div class="flow-row">
+    <div class="box accent"><b>GitHub Actions</b>cron.yml が1日7回、定期実行<div class="small">sync-day / sync-series-stats を呼ぶ</div></div>
+    <div class="arrow-h">→</div>
+    <div class="box accent"><b>Vercel (Next.js)</b>API route（Bearer認証）<div class="small">/api/cron/*</div></div>
+    <div class="arrow-h">→</div>
+    <div class="box accent"><b>Supabase (Postgres)</b>races / race_entries / series 等<div class="small">RLS: 読取公開・書込service role</div></div>
+  </div>
+  <div class="flow-row">
+    <div class="box"><b>データ取得元 ①</b>BoatraceOpenAPI<div class="small">出走表・直前情報・結果（JSON）</div></div>
+    <div class="arrow-h">↑ fetch</div>
+    <div class="box"><b>データ取得元 ②</b>boatrace.jp公式サイト<div class="small">得点率・前検タイム（HTML scrape）</div></div>
+    <div class="arrow-h">↑ fetch</div>
+    <div class="box"><b>ブラウザ</b>ユーザーがページ閲覧<div class="small">Server ComponentsがSupabaseを直接読取</div></div>
+  </div>
+</div>
+
+<h2>2. 技術スタック</h2>
+<table>
+  <tr><th>役割</th><th>技術</th><th>備考</th></tr>
+  <tr><td>フロントエンド/サーバー</td><td>Next.js 16 (App Router) + TypeScript</td><td>Server Componentsで直接Supabaseへ問い合わせ</td></tr>
+  <tr><td>スタイリング</td><td>Tailwind CSS 4</td><td>sumo-appと同じ配色（<code>#967E76</code>系）を踏襲</td></tr>
+  <tr><td>データベース</td><td>Supabase (PostgreSQL)</td><td>RLS有効。読取は公開、書込はservice roleキーのみ</td></tr>
+  <tr><td>ホスティング</td><td>Vercel</td><td>GitHubリポジトリと連携し、push時に自動デプロイ</td></tr>
+  <tr><td>定期実行</td><td>GitHub Actions（<span class="path">.github/workflows/cron.yml</span>）</td><td>Vercel Cronではなくこちらを採用（スケジュールの自由度が高いため）</td></tr>
+  <tr><td>スクレイピング</td><td>cheerio</td><td>boatrace.jpのHTML解析</td></tr>
+</table>
+
+<h2>3. データソース</h2>
+
+<h3>① BoatraceOpenAPI（出走表・直前情報・結果）</h3>
+<div class="card">
+  <p><b>エンドポイント:</b> <code>https://boatraceopenapi.github.io/api/v1/{YYYY}/{YYYYMMDD}.json</code></p>
+  <p><span class="tag">対応期間</span> 2026-01-01以降。GitHub Pagesで公開されている無料の非公式データセット。</p>
+  <p>1つのJSONに、その日開催された全競艇場・全レースの<b>出走表(programs)</b>・<b>直前情報(preview)</b>・<b>結果(result)</b>が
+  スタジアム番号・レース番号をキーにした階層構造で入っている。</p>
+  <table>
+    <tr><th>取得データ</th><th>主なフィールド</th><th>用途</th></tr>
+    <tr><td>出走表</td><td><code>racers[].number</code>（登録番号）, <code>rank_number</code>（級別）</td><td>選手マスタの更新</td></tr>
+    <tr><td>直前情報</td><td><code>preview.racers[].exhibition_time</code>, <code>course_number</code></td><td>コース別持ちタイム（要件4）</td></tr>
+    <tr><td>結果</td><td><code>result.technique_number</code>（決まり手）, <code>place_number</code>（着順）, <code>start_timing</code>（実績ST）</td><td>1着率・決まり手内訳（要件1,2）、コース別ST（要件3）</td></tr>
+  </table>
+  <p class="note">
+    <b>決まり手コード</b>: <code>technique_number</code> は 1=逃げ, 2=差し, 3=まくり, 4=まくり差し, 5=抜き, 6=恵まれ。
+    実データ（<code>technique_number_source</code>の日本語文字列）と突合して検証済み。
+  </p>
+</div>
+
+<h3>② boatrace.jp 公式サイト（直接スクレイピング）</h3>
+<div class="card">
+  <p>BoatraceOpenAPIには含まれない「今シリーズの得点率順位」「前検タイム」は、公式サイトのHTMLページを直接取得して
+  <code>cheerio</code>でパースしている（<span class="path">src/lib/scrape.ts</span>）。<code>robots.txt</code>で
+  全許可（<code>Disallow:</code>のみ）を確認済み。</p>
+  <table>
+    <tr><th>ページ</th><th>URL形式</th><th>用途</th></tr>
+    <tr><td>節間得点率一覧</td><td><code>/owpc/pc/race/pointrank?jcd={場コード}&hd={YYYYMMDD}</code></td><td>要件5: 今シリーズ得点率順位</td></tr>
+    <tr><td>モーター/ボート成績・前検タイム</td><td><code>/owpc/pc/race/rankingmotor?jcd={場コード}&hd={YYYYMMDD}</code></td><td>要件6: 今シリーズ前検タイム</td></tr>
+  </table>
+  <p class="note">
+    ページ構造が変わるとスクレイピングが破綻するリスクがあるため、1スタジアムの取得失敗が他のスタジアムに波及しないよう
+    try/catchで隔離している（<span class="path">src/app/api/cron/sync-series-stats/route.ts</span>）。
+    また「得点率」は初日の結果が出るまでは公式サイト側にデータが存在しない（"データがありません"ページが返る）ため、
+    その場合は0件のまま次回実行を待つ。
+  </p>
+</div>
+
+<h2>4. データベース設計</h2>
+<p>スキーマ定義: <span class="path">supabase/schema.sql</span></p>
+
+<div class="grid2">
+  <div class="box"><b>racers</b>選手マスタ<div class="small">racer_number (PK), name, rank_number, branch_number</div></div>
+  <div class="box"><b>series</b>シリーズ（節）<div class="small">id (PK), stadium_number, start_date, end_date, title</div></div>
+  <div class="box"><b>races</b>レース（決まり手はここ）<div class="small">date+stadium_number+race_number (PK), technique_number, series_id (FK)</div></div>
+  <div class="box"><b>race_entries</b>出走エントリー<div class="small">+entry_number (PK), racer_number, course_number, start_timing, place_number, exhibition_time</div></div>
+  <div class="box"><b>series_point_ranks</b>得点率（要件5）<div class="small">series_id+racer_number (PK), rank_position, point_rate, points, deduction</div></div>
+  <div class="box"><b>series_precheck</b>前検タイム（要件6）<div class="small">series_id+racer_number (PK), rank_position, precheck_time, motor/boat番号・2連対率</div></div>
+</div>
+
+<p><b>シリーズ（節）の自動検出:</b> BoatraceOpenAPIの <code>day_number</code>（開催何日目か）が1に戻ったスタジアムを
+「新シリーズ開始」とみなし、直前の進行中シリーズに<code>end_date</code>を確定してから新しい<code>series</code>行を作成する
+（<span class="path">src/lib/ingest.ts</span>の<code>ingestDay()</code>）。各<code>races</code>行には、その時点で
+「進行中」と判定されたシリーズのIDを<code>series_id</code>として直接持たせているため、集計時に日付レンジ結合ではなく
+単純なFK参照で「直近N場」を絞り込める。</p>
+
+<div class="note">
+  <b>過去の不具合と対処（記録として）:</b> 当初 <code>rank</code> という列名を使っていたが、PostgreSQLの組み込み順序集合集約関数
+  <code>rank()</code> と衝突し、<code>SELECT</code>時に <code>WITHIN GROUP is required for ordered-set aggregate rank</code>
+  エラーが発生した。<code>rank_position</code>にリネームして解決している。
+</div>
+
+<h2>5. データ取込の実装</h2>
+
+<h3>共通ロジック</h3>
+<table>
+  <tr><th>ファイル</th><th>役割</th></tr>
+  <tr><td class="path">src/lib/kyotei-api.ts</td><td>BoatraceOpenAPIの日次JSON取得・型定義</td></tr>
+  <tr><td class="path">src/lib/scrape.ts</td><td>boatrace.jpの得点率・前検タイムページのスクレイピング</td></tr>
+  <tr><td class="path">src/lib/ingest.ts</td><td>1日分のデータをracers/races/race_entries/seriesへupsertする共通処理（cron routeとbackfillスクリプトで共用）</td></tr>
+  <tr><td class="path">src/lib/aggregate.ts</td><td>6指標の集計ロジック（Server Componentから呼び出し）</td></tr>
+</table>
+
+<h3>API routes（Vercel上で動作、GitHub ActionsからBearerトークンで認証）</h3>
+<table>
+  <tr><th>Route</th><th>処理内容</th></tr>
+  <tr><td class="path">POST /api/cron/sync-day</td><td>指定日（省略時は当日JST）のBoatraceOpenAPIデータを取込。<code>?date=YYYY-MM-DD</code>で任意日を指定可能</td></tr>
+  <tr><td class="path">POST /api/cron/sync-series-stats</td><td>現在進行中の全シリーズ（<code>end_date is null</code>）について、得点率・前検タイムをスクレイピングして更新</td></tr>
+</table>
+<p>認証は <code>Authorization: Bearer &lt;CRON_SECRET&gt;</code> ヘッダーで行い、環境変数 <code>CRON_SECRET</code> と一致しない場合は401を返す。</p>
+
+<h3>初回バックフィル</h3>
+<p><span class="path">scripts/backfill.ts</span>（<code>npm run backfill</code>）を手動で一度だけ実行し、
+BoatraceOpenAPI対応開始日（2026-01-01）から前日までの日次データを一括投入する。1日ずつ<code>ingestDay()</code>を
+呼び出し、150msのウェイトを挟んで対象サイトへの負荷を抑えている。得点率・前検タイムはスクレイピングのため
+過去分は取得できず、稼働開始後に開催されたシリーズから蓄積される。</p>
+
+<h2>6. 集計ロジック（6指標）</h2>
+<table>
+  <tr><th>#</th><th>指標</th><th>関数</th><th>集計方法</th></tr>
+  <tr><td>1</td><td>直近10場 1着率（まくり/差し/まくり差し内訳）</td><td><code>getTop1RateByTechnique()</code></td><td>対象スタジアムの直近10シリーズの<code>race_entries</code>を<code>races.technique_number</code>と突合し、レーサー別に集計</td></tr>
+  <tr><td>2</td><td>直近5場 1着・2着数</td><td><code>getPlaceCounts()</code></td><td>直近5シリーズの<code>place_number</code>を集計</td></tr>
+  <tr><td>3</td><td>直近10場 コース別スタートタイミング</td><td><code>getStartTimingByCourse()</code></td><td>直近10シリーズを<code>course_number</code>別に平均</td></tr>
+  <tr><td>4</td><td>直近10場 コース別持ちタイム</td><td><code>getExhibitionTimeByCourse()</code></td><td>同上（<code>exhibition_time</code>を平均）</td></tr>
+  <tr><td>5</td><td>今シリーズ 得点率順位</td><td><code>getCurrentSeriesPointRank()</code></td><td><code>series_point_ranks</code>を<code>rank_position</code>順に取得</td></tr>
+  <tr><td>6</td><td>今シリーズ 前検タイム</td><td><code>getCurrentSeriesPrecheck()</code></td><td><code>series_precheck</code>を<code>rank_position</code>順に取得</td></tr>
+</table>
+<p>データ量がスタジアム単位で高々数千行程度のため、DB側でGROUP BYするSQL/RPCは作らず、
+必要な行をSupabaseから取得してJS側（Node/Next.jsサーバー）で集計する設計にしている。</p>
+
+<h2>7. 画面構成</h2>
+<div class="flow">
+  <div class="flow-row">
+    <div class="box accent"><b>/</b>ホーム画面<div class="small">24競艇場 × 6メニューのマトリクス表</div></div>
+  </div>
+  <div class="arrow">↓ セルをクリック</div>
+  <div class="flow-row">
+    <div class="box"><b>/stadium/[stadiumNumber]/top1-rate</b></div>
+    <div class="box"><b>/stadium/[stadiumNumber]/place-counts</b></div>
+    <div class="box"><b>/stadium/[stadiumNumber]/start-timing</b></div>
+  </div>
+  <div class="flow-row">
+    <div class="box"><b>/stadium/[stadiumNumber]/exhibition-time</b></div>
+    <div class="box"><b>/stadium/[stadiumNumber]/series-rank</b></div>
+    <div class="box"><b>/stadium/[stadiumNumber]/precheck-time</b></div>
+  </div>
+</div>
+<p>各競艇場ページは共通レイアウト（<span class="path">src/app/stadium/[stadiumNumber]/layout.tsx</span>）配下にあり、
+<span class="path">StadiumTabs</span>コンポーネントで6指標間をタブ切り替えできる。デザインは<span class="path">sumo-app</span>の
+配色（背景<code>#FAF6F0</code>、アクセント<code>#967E76</code>）とcard+table中心のレイアウトを踏襲。</p>
+
+<h2>8. デプロイ・運用フロー</h2>
+<ol>
+  <li><b>GitHub</b>: <code>michisuke0629/boat-app</code> リポジトリの <code>main</code> ブランチにpush</li>
+  <li><b>Vercel</b>: GitHubリポジトリと連携済み。pushをトリガーに自動ビルド・本番デプロイ（本番URL: <code>https://boat-pi-brown.vercel.app</code>）</li>
+  <li><b>GitHub Actions</b>: <span class="path">.github/workflows/cron.yml</span> が1日7回（JST基準）、Vercel上のAPI routeをBearer認証付きで呼び出す
+    <ul>
+      <li>23:50 / 翌06:50 — <code>sync-day</code>（レース結果取込）</li>
+      <li>07:00, 11:00, 15:00, 19:00, 23:30 — <code>sync-series-stats</code>（得点率・前検タイム）</li>
+    </ul>
+  </li>
+</ol>
+
+<h3>環境変数</h3>
+<table>
+  <tr><th>変数名</th><th>用途</th><th>設定先</th></tr>
+  <tr><td><code>NEXT_PUBLIC_SUPABASE_URL</code></td><td>Supabaseプロジェクト URL</td><td>Vercel環境変数 / <span class="path">.env.local</span></td></tr>
+  <tr><td><code>NEXT_PUBLIC_SUPABASE_ANON_KEY</code></td><td>公開読取用キー（RLS配下）</td><td>同上</td></tr>
+  <tr><td><code>SUPABASE_SERVICE_ROLE_KEY</code></td><td>RLSをバイパスする書込用キー。cron routeのみで使用しクライアントに露出しない</td><td>同上</td></tr>
+  <tr><td><code>CRON_SECRET</code></td><td>cron route認証用のBearerトークン</td><td>Vercel環境変数 + GitHub Actions Secrets</td></tr>
+  <tr><td><code>APP_URL</code></td><td>GitHub ActionsがAPIを呼ぶ先の本番URL</td><td>GitHub Actions Secrets のみ</td></tr>
+</table>
+
+<h2>9. 既知の制約</h2>
+<ul>
+  <li>BoatraceOpenAPIは2026-01-01以降のデータしか提供していないため、サービス開始直後は「直近10場」等の指標が
+    指定場数に届かない競艇場がある（画面上に注記表示）。</li>
+  <li>得点率・前検タイムはスクレイピングのため過去分は遡れず、稼働開始後に開催されたシリーズから蓄積される。</li>
+  <li>boatrace.jpのページ構造が変わるとスクレイピングが失敗する可能性がある（1スタジアム単位でtry/catchしているため
+    他スタジアムへの影響は限定的）。</li>
+  <li>GitHub Actionsの<code>schedule</code>は指定時刻ちょうどに実行される保証がなく、数分〜十数分程度前後する。</li>
+</ul>
+
+</div>
+</body>
+</html>
