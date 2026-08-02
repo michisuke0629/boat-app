@@ -30,7 +30,7 @@ jobs:
           curl -sf -X POST "$URL" -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
 
   sync-day-yesterday:
-    if: github.event.schedule == '50 21 * * *'
+    if: github.event.schedule == '50 21 * * *' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - name: 前日分の日付を計算してsync-dayを呼び出す
@@ -40,7 +40,7 @@ jobs:
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
 
   sync-series-stats:
-    if: github.event.schedule == '0 22 * * *' || github.event.schedule == '0 2 * * *' || github.event.schedule == '0 6 * * *' || github.event.schedule == '0 10 * * *' || github.event.schedule == '30 14 * * *'
+    if: github.event.schedule == '0 22 * * *' || github.event.schedule == '0 2 * * *' || github.event.schedule == '0 6 * * *' || github.event.schedule == '0 10 * * *' || github.event.schedule == '30 14 * * *' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - name: sync-series-stats を呼び出す
