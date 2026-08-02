@@ -5,6 +5,8 @@ import { supabaseAdmin } from '@/lib/supabase';
 import { fetchPointRank, fetchPrecheck } from '@/lib/scrape';
 import { todayJST } from '@/lib/kyotei-api';
 
+export const maxDuration = 60;
+
 export async function POST(request: NextRequest) {
   const authHeader = request.headers.get('authorization');
   const cronSecret = process.env.CRON_SECRET;
@@ -24,64 +26,64 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  const results: { stadiumNumber: number; seriesId: number; pointRankCount: number; precheckCount: number; error?: string }[] = [];
+  const results = await Promise.all(
+    (activeSeries ?? []).map(async (series) => {
+      try {
+        const [pointRank, precheck] = await Promise.all([
+          fetchPointRank(series.stadium_number, hd),
+          fetchPrecheck(series.stadium_number, hd),
+        ]);
 
-  for (const series of activeSeries ?? []) {
-    try {
-      const [pointRank, precheck] = await Promise.all([
-        fetchPointRank(series.stadium_number, hd),
-        fetchPrecheck(series.stadium_number, hd),
-      ]);
+        if (pointRank.length > 0) {
+          await supabaseAdmin.from('series_point_ranks').upsert(
+            pointRank.map((e) => ({
+              series_id: series.id,
+              racer_number: e.racerNumber,
+              rank_position: e.rank,
+              points: e.points,
+              deduction: e.deduction,
+              point_rate: e.pointRate,
+              scraped_at: new Date().toISOString(),
+            })),
+            { onConflict: 'series_id,racer_number' }
+          );
+        }
 
-      if (pointRank.length > 0) {
-        await supabaseAdmin.from('series_point_ranks').upsert(
-          pointRank.map((e) => ({
-            series_id: series.id,
-            racer_number: e.racerNumber,
-            rank_position: e.rank,
-            points: e.points,
-            deduction: e.deduction,
-            point_rate: e.pointRate,
-            scraped_at: new Date().toISOString(),
-          })),
-          { onConflict: 'series_id,racer_number' }
-        );
+        if (precheck.length > 0) {
+          await supabaseAdmin.from('series_precheck').upsert(
+            precheck.map((e) => ({
+              series_id: series.id,
+              racer_number: e.racerNumber,
+              rank_position: e.rank,
+              motor_number: e.motorNumber,
+              motor_top2_rate: e.motorTop2Rate,
+              boat_number: e.boatNumber,
+              boat_top2_rate: e.boatTop2Rate,
+              precheck_time: e.precheckTime,
+              scraped_at: new Date().toISOString(),
+            })),
+            { onConflict: 'series_id,racer_number' }
+          );
+        }
+
+        return {
+          stadiumNumber: series.stadium_number,
+          seriesId: series.id,
+          pointRankCount: pointRank.length,
+          precheckCount: precheck.length,
+        };
+      } catch (err) {
+        // ページ構造変化・非開催日・タイムアウト等で失敗しても他のスタジアムの処理は継続する
+        return {
+          stadiumNumber: series.stadium_number,
+          seriesId: series.id,
+          pointRankCount: 0,
+          precheckCount: 0,
+          error: err instanceof Error ? err.message : String(err),
+        };
       }
-
-      if (precheck.length > 0) {
-        await supabaseAdmin.from('series_precheck').upsert(
-          precheck.map((e) => ({
-            series_id: series.id,
-            racer_number: e.racerNumber,
-            rank_position: e.rank,
-            motor_number: e.motorNumber,
-            motor_top2_rate: e.motorTop2Rate,
-            boat_number: e.boatNumber,
-            boat_top2_rate: e.boatTop2Rate,
-            precheck_time: e.precheckTime,
-            scraped_at: new Date().toISOString(),
-          })),
-          { onConflict: 'series_id,racer_number' }
-        );
-      }
-
-      results.push({
-        stadiumNumber: series.stadium_number,
-        seriesId: series.id,
-        pointRankCount: pointRank.length,
-        precheckCount: precheck.length,
-      });
-    } catch (err) {
-      // ページ構造変化・非開催日等で失敗しても他のスタジアムの処理は継続する
-      results.push({
-        stadiumNumber: series.stadium_number,
-        seriesId: series.id,
-        pointRankCount: 0,
-        precheckCount: 0,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
-  }
+    })
+  );
 
   return NextResponse.json({ hd, results });
 }
