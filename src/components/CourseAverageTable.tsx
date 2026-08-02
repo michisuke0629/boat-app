@@ -11,7 +11,7 @@ export default function CourseAverageTable({
     <div className="bg-white rounded-lg shadow-md overflow-auto">
       <table className="w-full text-sm whitespace-nowrap">
         <thead>
-          <tr className="bg-[#967E76] text-white">
+          <tr className="bg-[#1995AD] text-white">
             <th className="px-3 py-2 text-left">レーサー</th>
             {[1, 2, 3, 4, 5, 6].map((c) => (
               <th key={c} className="px-3 py-2 text-center">
@@ -22,7 +22,7 @@ export default function CourseAverageTable({
         </thead>
         <tbody>
           {rows.map((r, i) => (
-            <tr key={r.racerNumber} className={`border-t ${i % 2 === 1 ? 'bg-[#FAF6F0]/60' : ''}`}>
+            <tr key={r.racerNumber} className={`border-t ${i % 2 === 1 ? 'bg-[#F1F1F2]/60' : ''}`}>
               <td className="px-3 py-1.5 font-medium">{r.name}</td>
               {[1, 2, 3, 4, 5, 6].map((c) => {
                 const v = r.courses[c];

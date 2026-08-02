@@ -18,8 +18,8 @@ export default function StadiumTabs({ stadiumNumber }: { stadiumNumber: number }
             href={href}
             className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
               active
-                ? 'bg-[#967E76] text-white'
-                : 'bg-[#EEE3CB]/50 text-[#967E76] hover:bg-[#D7C0AE]/40'
+                ? 'bg-[#1995AD] text-white'
+                : 'bg-[#A1D6ED]/50 text-[#1995AD] hover:bg-[#BCBABE]/40'
             }`}
           >
             {menu.shortLabel}

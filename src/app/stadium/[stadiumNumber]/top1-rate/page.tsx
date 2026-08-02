@@ -26,7 +26,7 @@ export default async function Top1RatePage({
       <div className="bg-white rounded-lg shadow-md overflow-auto">
         <table className="w-full text-sm whitespace-nowrap">
           <thead>
-            <tr className="bg-[#967E76] text-white">
+            <tr className="bg-[#1995AD] text-white">
               <th className="px-3 py-2 text-left">レーサー</th>
               <th className="px-3 py-2 text-right">出走数</th>
               <th className="px-3 py-2 text-right">1着数</th>
@@ -38,11 +38,11 @@ export default async function Top1RatePage({
           </thead>
           <tbody>
             {rows.map((r, i) => (
-              <tr key={r.racerNumber} className={`border-t ${i % 2 === 1 ? 'bg-[#FAF6F0]/60' : ''}`}>
+              <tr key={r.racerNumber} className={`border-t ${i % 2 === 1 ? 'bg-[#F1F1F2]/60' : ''}`}>
                 <td className="px-3 py-1.5 font-medium">{r.name}</td>
                 <td className="px-3 py-1.5 text-right">{r.entries}</td>
                 <td className="px-3 py-1.5 text-right">{r.top1Count}</td>
-                <td className="px-3 py-1.5 text-right font-bold text-[#967E76]">{pct(r.top1Rate)}</td>
+                <td className="px-3 py-1.5 text-right font-bold text-[#1995AD]">{pct(r.top1Rate)}</td>
                 <td className="px-3 py-1.5 text-right">{pct(r.makuriRate)}</td>
                 <td className="px-3 py-1.5 text-right">{pct(r.sashiRate)}</td>
                 <td className="px-3 py-1.5 text-right">{pct(r.makuriSashiRate)}</td>

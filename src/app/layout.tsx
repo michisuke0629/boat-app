@@ -28,7 +28,7 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <header className="bg-[#967E76] text-white shadow-lg">
+        <header className="bg-[#1995AD] text-white shadow-lg">
           <nav className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
             <Link href="/" className="text-xl font-bold tracking-wider">
               競艇データ分析

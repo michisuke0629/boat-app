@@ -19,10 +19,10 @@ export default async function StadiumLayout({
     <div className="space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-3">
-          <Link href="/" className="text-sm text-gray-500 hover:text-[#967E76] hover:underline">
+          <Link href="/" className="text-sm text-gray-500 hover:text-[#1995AD] hover:underline">
             ← 競艇場選択
           </Link>
-          <h1 className="text-2xl font-bold text-[#967E76]">{stadium.name}</h1>
+          <h1 className="text-2xl font-bold text-[#1995AD]">{stadium.name}</h1>
         </div>
       </div>
       <StadiumTabs stadiumNumber={num} />
