@@ -26,8 +26,16 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  const results = await Promise.all(
-    (activeSeries ?? []).map(async (series) => {
+  // 24スタジアム分を一斉に投げると輻輳してタイムアウトが増えるため、
+  // 同時実行数を絞ったバッチ処理にする
+  const CONCURRENCY = 6;
+  const queue = [...(activeSeries ?? [])];
+  const results: { stadiumNumber: number; seriesId: number; pointRankCount: number; precheckCount: number; error?: string }[] = [];
+
+  async function worker() {
+    while (queue.length > 0) {
+      const series = queue.shift();
+      if (!series) break;
       try {
         const [pointRank, precheck] = await Promise.all([
           fetchPointRank(series.stadium_number, hd),
@@ -66,24 +74,26 @@ export async function POST(request: NextRequest) {
           );
         }
 
-        return {
+        results.push({
           stadiumNumber: series.stadium_number,
           seriesId: series.id,
           pointRankCount: pointRank.length,
           precheckCount: precheck.length,
-        };
+        });
       } catch (err) {
         // ページ構造変化・非開催日・タイムアウト等で失敗しても他のスタジアムの処理は継続する
-        return {
+        results.push({
           stadiumNumber: series.stadium_number,
           seriesId: series.id,
           pointRankCount: 0,
           precheckCount: 0,
           error: err instanceof Error ? err.message : String(err),
-        };
+        });
       }
-    })
-  );
+    }
+  }
+
+  await Promise.all(Array.from({ length: CONCURRENCY }, () => worker()));
 
   return NextResponse.json({ hd, results });
 }

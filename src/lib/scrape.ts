@@ -39,7 +39,7 @@ function racerNumberFromCell($: cheerio.CheerioAPI, td: ReturnType<cheerio.Cheer
 // 節間得点率一覧 /owpc/pc/race/pointrank?jcd={jcd}&hd={hd}
 export async function fetchPointRank(stadiumNumber: number, hd: string): Promise<PointRankEntry[]> {
   const url = `https://www.boatrace.jp/owpc/pc/race/pointrank?jcd=${jcdParam(stadiumNumber)}&hd=${hd}`;
-  const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
+  const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
   if (!res.ok) throw new Error(`pointrank取得失敗: ${res.status} (${url})`);
   const html = await res.text();
   const $ = cheerio.load(html);
@@ -67,7 +67,7 @@ export async function fetchPointRank(stadiumNumber: number, hd: string): Promise
 // モーター/ボート成績・前検タイム /owpc/pc/race/rankingmotor?jcd={jcd}&hd={hd}
 export async function fetchPrecheck(stadiumNumber: number, hd: string): Promise<PrecheckEntry[]> {
   const url = `https://www.boatrace.jp/owpc/pc/race/rankingmotor?jcd=${jcdParam(stadiumNumber)}&hd=${hd}`;
-  const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
+  const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
   if (!res.ok) throw new Error(`rankingmotor取得失敗: ${res.status} (${url})`);
   const html = await res.text();
   const $ = cheerio.load(html);
