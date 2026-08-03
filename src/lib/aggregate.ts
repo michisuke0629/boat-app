@@ -264,28 +264,155 @@ export async function getCurrentSeriesPointRank(stadiumNumber: number) {
   return { rows, series };
 }
 
+// 本日のレース情報用: レーサーの全競艇場横断・直近10開催（節）分の出走をまとめる
+// race_entriesにseries_idを持たないため、racesとJOINしてseries_idで開催をグルーピングする
+interface RacerFormAcc {
+  entries: number;
+  top1: number;
+  top2: number;
+  makuri: number;
+  sashi: number;
+  makuriSashi: number;
+}
+
+async function getRacerRecentForm(
+  racerNumbers: number[],
+  meetingLimit: number
+): Promise<Map<number, RacerFormAcc>> {
+  if (racerNumbers.length === 0) return new Map();
+
+  const { data: entries, error: entryError } = await supabase
+    .from('race_entries')
+    .select('date, stadium_number, race_number, racer_number, place_number')
+    .in('racer_number', racerNumbers)
+    .order('date', { ascending: false })
+    .limit(3000);
+  if (entryError) throw new Error(`race_entries取得失敗: ${entryError.message}`);
+  if (!entries || entries.length === 0) return new Map();
+
+  const stadiumNumbers = Array.from(new Set(entries.map((e) => e.stadium_number)));
+  const dates = Array.from(new Set(entries.map((e) => e.date)));
+
+  const { data: races, error: raceError } = await supabase
+    .from('races')
+    .select('date, stadium_number, race_number, series_id, technique_number')
+    .in('stadium_number', stadiumNumbers)
+    .in('date', dates);
+  if (raceError) throw new Error(`races取得失敗: ${raceError.message}`);
+
+  const raceMeta = new Map<string, { seriesId: number | null; technique: number | null }>();
+  for (const r of races ?? []) {
+    raceMeta.set(`${r.date}_${r.stadium_number}_${r.race_number}`, {
+      seriesId: r.series_id,
+      technique: r.technique_number,
+    });
+  }
+
+  // racerNumber -> 開催キー（series_id優先、無ければ競艇場+日付で代用） -> エントリー一覧
+  const byRacer = new Map<
+    number,
+    Map<string, { date: string; placeNumber: number | null; technique: number | null }[]>
+  >();
+  for (const e of entries) {
+    const meta = raceMeta.get(`${e.date}_${e.stadium_number}_${e.race_number}`);
+    const meetingKey = meta?.seriesId != null ? `s${meta.seriesId}` : `${e.stadium_number}_${e.date}`;
+    if (!byRacer.has(e.racer_number)) byRacer.set(e.racer_number, new Map());
+    const meetingMap = byRacer.get(e.racer_number)!;
+    const list = meetingMap.get(meetingKey) ?? [];
+    list.push({ date: e.date, placeNumber: e.place_number, technique: meta?.technique ?? null });
+    meetingMap.set(meetingKey, list);
+  }
+
+  const result = new Map<number, RacerFormAcc>();
+  for (const [racerNumber, meetingMap] of byRacer) {
+    const meetings = Array.from(meetingMap.values())
+      .map((list) => ({ list, latestDate: list.reduce((max, l) => (l.date > max ? l.date : max), list[0].date) }))
+      .sort((a, b) => (a.latestDate < b.latestDate ? 1 : -1))
+      .slice(0, meetingLimit);
+
+    const acc: RacerFormAcc = { entries: 0, top1: 0, top2: 0, makuri: 0, sashi: 0, makuriSashi: 0 };
+    for (const meeting of meetings) {
+      for (const l of meeting.list) {
+        acc.entries++;
+        if (l.placeNumber === 1) {
+          acc.top1++;
+          if (l.technique === 3) acc.makuri++;
+          else if (l.technique === 2) acc.sashi++;
+          else if (l.technique === 4) acc.makuriSashi++;
+        }
+        if (l.placeNumber === 2) acc.top2++;
+      }
+    }
+    result.set(racerNumber, acc);
+  }
+
+  return result;
+}
+
+// 本日のレース情報用: 今開催（進行中のシリーズ）でのスタートタイミング・展示タイムの最速値
+async function getCurrentMeetingBestTimes(
+  stadiumNumber: number,
+  racerNumbers: number[]
+): Promise<Map<number, { bestStartTiming: number | null; bestExhibitionTime: number | null }>> {
+  const result = new Map<number, { bestStartTiming: number | null; bestExhibitionTime: number | null }>();
+  if (racerNumbers.length === 0) return result;
+
+  const series = await getActiveSeries(stadiumNumber);
+  if (!series) return result;
+
+  const { data: races, error: raceError } = await supabase
+    .from('races')
+    .select('date')
+    .eq('stadium_number', stadiumNumber)
+    .eq('series_id', series.id);
+  if (raceError) throw new Error(`races取得失敗: ${raceError.message}`);
+  const dates = Array.from(new Set((races ?? []).map((r) => r.date)));
+  if (dates.length === 0) return result;
+
+  const { data: entries, error: entryError } = await supabase
+    .from('race_entries')
+    .select('racer_number, start_timing, exhibition_time')
+    .eq('stadium_number', stadiumNumber)
+    .in('date', dates)
+    .in('racer_number', racerNumbers);
+  if (entryError) throw new Error(`race_entries取得失敗: ${entryError.message}`);
+
+  for (const e of entries ?? []) {
+    const cur = result.get(e.racer_number) ?? { bestStartTiming: null, bestExhibitionTime: null };
+    if (e.start_timing !== null && (cur.bestStartTiming === null || e.start_timing < cur.bestStartTiming)) {
+      cur.bestStartTiming = e.start_timing;
+    }
+    if (
+      e.exhibition_time !== null &&
+      (cur.bestExhibitionTime === null || e.exhibition_time < cur.bestExhibitionTime)
+    ) {
+      cur.bestExhibitionTime = e.exhibition_time;
+    }
+    result.set(e.racer_number, cur);
+  }
+
+  return result;
+}
+
 // 本日のレース情報: 出走6艇について6指標をまとめて返す
 export interface RaceEntryInput {
   entryNumber: number;
   racerNumber: number;
-  courseNumber: number | null; // 想定進入コース（直前情報 or 結果）。無ければ枠番で代用
 }
 
 export interface RaceCardRow {
   entryNumber: number;
   racerNumber: number;
   name: string;
-  courseNumber: number;
   top1Count10: number | null;
   top1Rate10: number | null;
   makuriRate10: number | null;
   sashiRate10: number | null;
   makuriSashiRate10: number | null;
-  entries5: number | null;
-  top1Count5: number | null;
-  top2Count5: number | null;
-  startTiming: number | null;
-  exhibitionTime: number | null;
+  entries10: number | null;
+  top2Count10: number | null;
+  bestStartTiming: number | null;
+  bestExhibitionTime: number | null;
   pointRate: number | null;
   points: number | null;
   deduction: number | null;
@@ -301,30 +428,22 @@ export async function getRaceCardStats(
   entries: RaceEntryInput[]
 ): Promise<RaceCardRow[]> {
   if (entries.length === 0) return [];
+  const racerNumbers = entries.map((e) => e.racerNumber);
 
-  const [top1, placeCounts, startTiming, exhibitionTime, pointRank, precheck, names] = await Promise.all([
-    getTop1RateByTechnique(stadiumNumber, 10),
-    getPlaceCounts(stadiumNumber, 5),
-    getStartTimingByCourse(stadiumNumber, 10),
-    getExhibitionTimeByCourse(stadiumNumber, 10),
+  const [form, bestTimes, pointRank, precheck, names] = await Promise.all([
+    getRacerRecentForm(racerNumbers, 10),
+    getCurrentMeetingBestTimes(stadiumNumber, racerNumbers),
     getCurrentSeriesPointRank(stadiumNumber),
     getCurrentSeriesPrecheck(stadiumNumber),
-    getRacerNames(entries.map((e) => e.racerNumber)),
+    getRacerNames(racerNumbers),
   ]);
 
-  const top1Map = new Map(top1.rows.map((r) => [r.racerNumber, r]));
-  const placeMap = new Map(placeCounts.rows.map((r) => [r.racerNumber, r]));
-  const startMap = new Map(startTiming.rows.map((r) => [r.racerNumber, r]));
-  const exhibitionMap = new Map(exhibitionTime.rows.map((r) => [r.racerNumber, r]));
   const pointMap = new Map(pointRank.rows.map((r) => [r.racerNumber, r]));
   const precheckMap = new Map(precheck.rows.map((r) => [r.racerNumber, r]));
 
   return entries.map((e) => {
-    const course = e.courseNumber ?? e.entryNumber;
-    const t1 = top1Map.get(e.racerNumber);
-    const pc = placeMap.get(e.racerNumber);
-    const st = startMap.get(e.racerNumber)?.courses[course] ?? null;
-    const ex = exhibitionMap.get(e.racerNumber)?.courses[course] ?? null;
+    const f = form.get(e.racerNumber);
+    const bt = bestTimes.get(e.racerNumber);
     const pr = pointMap.get(e.racerNumber);
     const pk = precheckMap.get(e.racerNumber);
 
@@ -332,17 +451,15 @@ export async function getRaceCardStats(
       entryNumber: e.entryNumber,
       racerNumber: e.racerNumber,
       name: names.get(e.racerNumber) ?? `登録番号${e.racerNumber}`,
-      courseNumber: course,
-      top1Count10: t1?.top1Count ?? null,
-      top1Rate10: t1?.top1Rate ?? null,
-      makuriRate10: t1?.makuriRate ?? null,
-      sashiRate10: t1?.sashiRate ?? null,
-      makuriSashiRate10: t1?.makuriSashiRate ?? null,
-      entries5: pc?.entries ?? null,
-      top1Count5: pc?.top1Count ?? null,
-      top2Count5: pc?.top2Count ?? null,
-      startTiming: st?.average ?? null,
-      exhibitionTime: ex?.average ?? null,
+      top1Count10: f ? f.top1 : null,
+      top1Rate10: f && f.entries > 0 ? f.top1 / f.entries : null,
+      makuriRate10: f && f.entries > 0 ? f.makuri / f.entries : null,
+      sashiRate10: f && f.entries > 0 ? f.sashi / f.entries : null,
+      makuriSashiRate10: f && f.entries > 0 ? f.makuriSashi / f.entries : null,
+      entries10: f ? f.entries : null,
+      top2Count10: f ? f.top2 : null,
+      bestStartTiming: bt?.bestStartTiming ?? null,
+      bestExhibitionTime: bt?.bestExhibitionTime ?? null,
       pointRate: pr?.pointRate ?? null,
       points: pr?.points ?? null,
       deduction: pr?.deduction ?? null,

@@ -30,8 +30,6 @@ export default async function TodayRacePage({
     .map(([entryKey, r]) => ({
       entryNumber: Number(entryKey),
       racerNumber: r.number,
-      courseNumber:
-        race.result?.racers[entryKey]?.course_number ?? race.preview?.racers[entryKey]?.course_number ?? null,
     }))
     .sort((a, b) => a.entryNumber - b.entryNumber);
 
@@ -40,6 +38,9 @@ export default async function TodayRacePage({
   return (
     <div className="space-y-3">
       {race.subtitle && <p className="text-sm text-gray-500">{race.subtitle}</p>}
+      <p className="text-xs text-gray-400">
+        1着数・1着率・まくり/差し内訳・出走数・2着数は全競艇場の直近10開催、スタートタイム・持ちタイムは今開催での最速値
+      </p>
 
       <div className="bg-white rounded-lg shadow-md overflow-auto">
         <table className="w-full text-sm whitespace-nowrap">
@@ -106,14 +107,14 @@ export default async function TodayRacePage({
                   {pct(r.makuriSashiRate10)}
                 </td>
                 <td className="px-3 py-2 text-center">
-                  {r.entries5 ?? '-'}
+                  {r.entries10 ?? '-'}
                   <br />
-                  {r.top1Count5 ?? '-'}
+                  {r.top1Count10 ?? '-'}
                   <br />
-                  {r.top2Count5 ?? '-'}
+                  {r.top2Count10 ?? '-'}
                 </td>
-                <td className="px-3 py-2 text-center">{dec(r.startTiming)}</td>
-                <td className="px-3 py-2 text-center">{dec(r.exhibitionTime)}</td>
+                <td className="px-3 py-2 text-center">{dec(r.bestStartTiming)}</td>
+                <td className="px-3 py-2 text-center">{dec(r.bestExhibitionTime)}</td>
                 <td className="px-3 py-2 text-center">
                   <span className="font-bold text-[#1995AD]">{r.pointRate ?? '-'}</span>
                   <br />
