@@ -62,7 +62,7 @@ async function getRacesAndEntries(
   return { races: races ?? [], entries: entries ?? [] };
 }
 
-async function getRacerNames(racerNumbers: number[]): Promise<Map<number, string>> {
+export async function getRacerNames(racerNumbers: number[]): Promise<Map<number, string>> {
   if (racerNumbers.length === 0) return new Map();
   const { data, error } = await supabase
     .from('racers')
@@ -262,6 +262,97 @@ export async function getCurrentSeriesPointRank(stadiumNumber: number) {
   }));
 
   return { rows, series };
+}
+
+// 本日のレース情報: 出走6艇について6指標をまとめて返す
+export interface RaceEntryInput {
+  entryNumber: number;
+  racerNumber: number;
+  courseNumber: number | null; // 想定進入コース（直前情報 or 結果）。無ければ枠番で代用
+}
+
+export interface RaceCardRow {
+  entryNumber: number;
+  racerNumber: number;
+  name: string;
+  courseNumber: number;
+  top1Count10: number | null;
+  top1Rate10: number | null;
+  makuriRate10: number | null;
+  sashiRate10: number | null;
+  makuriSashiRate10: number | null;
+  entries5: number | null;
+  top1Count5: number | null;
+  top2Count5: number | null;
+  startTiming: number | null;
+  exhibitionTime: number | null;
+  pointRate: number | null;
+  points: number | null;
+  deduction: number | null;
+  precheckTime: number | null;
+  motorNumber: number | null;
+  motorTop2Rate: number | null;
+  boatNumber: number | null;
+  boatTop2Rate: number | null;
+}
+
+export async function getRaceCardStats(
+  stadiumNumber: number,
+  entries: RaceEntryInput[]
+): Promise<RaceCardRow[]> {
+  if (entries.length === 0) return [];
+
+  const [top1, placeCounts, startTiming, exhibitionTime, pointRank, precheck, names] = await Promise.all([
+    getTop1RateByTechnique(stadiumNumber, 10),
+    getPlaceCounts(stadiumNumber, 5),
+    getStartTimingByCourse(stadiumNumber, 10),
+    getExhibitionTimeByCourse(stadiumNumber, 10),
+    getCurrentSeriesPointRank(stadiumNumber),
+    getCurrentSeriesPrecheck(stadiumNumber),
+    getRacerNames(entries.map((e) => e.racerNumber)),
+  ]);
+
+  const top1Map = new Map(top1.rows.map((r) => [r.racerNumber, r]));
+  const placeMap = new Map(placeCounts.rows.map((r) => [r.racerNumber, r]));
+  const startMap = new Map(startTiming.rows.map((r) => [r.racerNumber, r]));
+  const exhibitionMap = new Map(exhibitionTime.rows.map((r) => [r.racerNumber, r]));
+  const pointMap = new Map(pointRank.rows.map((r) => [r.racerNumber, r]));
+  const precheckMap = new Map(precheck.rows.map((r) => [r.racerNumber, r]));
+
+  return entries.map((e) => {
+    const course = e.courseNumber ?? e.entryNumber;
+    const t1 = top1Map.get(e.racerNumber);
+    const pc = placeMap.get(e.racerNumber);
+    const st = startMap.get(e.racerNumber)?.courses[course] ?? null;
+    const ex = exhibitionMap.get(e.racerNumber)?.courses[course] ?? null;
+    const pr = pointMap.get(e.racerNumber);
+    const pk = precheckMap.get(e.racerNumber);
+
+    return {
+      entryNumber: e.entryNumber,
+      racerNumber: e.racerNumber,
+      name: names.get(e.racerNumber) ?? `登録番号${e.racerNumber}`,
+      courseNumber: course,
+      top1Count10: t1?.top1Count ?? null,
+      top1Rate10: t1?.top1Rate ?? null,
+      makuriRate10: t1?.makuriRate ?? null,
+      sashiRate10: t1?.sashiRate ?? null,
+      makuriSashiRate10: t1?.makuriSashiRate ?? null,
+      entries5: pc?.entries ?? null,
+      top1Count5: pc?.top1Count ?? null,
+      top2Count5: pc?.top2Count ?? null,
+      startTiming: st?.average ?? null,
+      exhibitionTime: ex?.average ?? null,
+      pointRate: pr?.pointRate ?? null,
+      points: pr?.points ?? null,
+      deduction: pr?.deduction ?? null,
+      precheckTime: pk?.precheckTime ?? null,
+      motorNumber: pk?.motorNumber ?? null,
+      motorTop2Rate: pk?.motorTop2Rate ?? null,
+      boatNumber: pk?.boatNumber ?? null,
+      boatTop2Rate: pk?.boatTop2Rate ?? null,
+    };
+  });
 }
 
 // 要件6: 今シリーズのレーサー別前検タイム
