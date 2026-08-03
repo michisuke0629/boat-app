@@ -33,8 +33,8 @@ export default function RootLayout({
             <Link href="/" className="text-xl font-bold tracking-wider">
               競艇データ分析
             </Link>
-            <Link href="/today" className="text-sm font-medium hover:underline">
-              本日のレース
+            <Link href="/stadiums" className="text-sm font-medium hover:underline">
+              競艇場別データ分析
             </Link>
           </nav>
         </header>

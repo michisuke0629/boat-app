@@ -25,7 +25,7 @@ export default async function TodayStadiumLayout({
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3 flex-wrap">
-        <Link href="/today" className="text-sm text-gray-500 hover:text-[#1995AD] hover:underline">
+        <Link href="/" className="text-sm text-gray-500 hover:text-[#1995AD] hover:underline">
           ← 本日のレース
         </Link>
         <h1 className="text-2xl font-bold text-[#1995AD]">{stadiumName(num)}</h1>
