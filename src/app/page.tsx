@@ -5,7 +5,15 @@ import { MENU_ITEMS } from '@/lib/menu';
 export default function Home() {
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-bold text-[#1995AD]">競艇場を選択</h1>
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <h1 className="text-2xl font-bold text-[#1995AD]">競艇場を選択</h1>
+        <Link
+          href="/today"
+          className="px-4 py-2 rounded bg-[#1995AD] text-white font-medium hover:bg-[#147A91] transition-colors"
+        >
+          本日のレース
+        </Link>
+      </div>
 
       <div className="bg-white rounded-lg shadow-md overflow-auto">
         <table className="w-full text-sm whitespace-nowrap">
