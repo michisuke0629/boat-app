@@ -52,7 +52,7 @@ export default async function TodayRacePage({
           rel="noopener noreferrer"
           className="shrink-0 px-3 py-1.5 rounded text-sm font-medium bg-[#A1D6ED]/50 text-[#1995AD] hover:bg-[#1995AD] hover:text-white transition-colors"
         >
-          コース別全艇成績1着率一覧表（外部） ↗
+          競艇日和（枠順情報） ↗
         </a>
       </div>
 
