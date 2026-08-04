@@ -35,12 +35,26 @@ export default async function TodayRacePage({
 
   const rows = await getRaceCardStats(stadiumNum, entries);
 
+  const kyoteibiyoriUrl = `https://kyoteibiyori.com/race_shusso.php?place_no=${stadiumNum}&race_no=${raceNum}&hiduke=${race.date.replace(/-/g, '')}&slider=1`;
+
   return (
     <div className="space-y-3">
-      {race.subtitle && <p className="text-sm text-gray-500">{race.subtitle}</p>}
-      <p className="text-xs text-gray-400">
-        1着数・1着率・まくり/差し内訳・出走数・2着数は全競艇場の直近10開催、スタートタイム・持ちタイムは今開催での最速値
-      </p>
+      <div className="flex items-start justify-between flex-wrap gap-2">
+        <div className="space-y-1">
+          {race.subtitle && <p className="text-sm text-gray-500">{race.subtitle}</p>}
+          <p className="text-xs text-gray-400">
+            1着数・1着率・まくり/差し内訳・出走数・2着数は全競艇場の直近10開催、スタートタイム・持ちタイムは今開催での最速値
+          </p>
+        </div>
+        <a
+          href={kyoteibiyoriUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="shrink-0 px-3 py-1.5 rounded text-sm font-medium bg-[#A1D6ED]/50 text-[#1995AD] hover:bg-[#1995AD] hover:text-white transition-colors"
+        >
+          コース別全艇成績1着率一覧表（外部） ↗
+        </a>
+      </div>
 
       <div className="bg-white rounded-lg shadow-md overflow-auto">
         <table className="w-full text-sm whitespace-nowrap">
