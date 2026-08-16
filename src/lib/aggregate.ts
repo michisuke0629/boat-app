@@ -334,6 +334,9 @@ export interface RaceEntryInput {
 
 export interface CourseRateStats {
   entries: number;
+  top1Count: number;
+  top2Count: number;
+  top3Count: number;
   top1Rate: number | null;
   top2Rate: number | null;
   top3Rate: number | null;
@@ -399,12 +402,18 @@ export async function getRaceCardAnalysis(
     const courseOneYear = h.filter((x) => x.course === e.course && x.date >= oneYearAgo);
     const allSixMonth = h.filter((x) => x.date >= sixMonthsAgo);
     const frameEntries = courseSixMonth.length;
+    const frameTop1Count = courseSixMonth.filter((x) => x.place === 1).length;
+    const frameTop2Count = courseSixMonth.filter((x) => x.place === 2).length;
+    const frameTop3Count = courseSixMonth.filter((x) => x.place === 3).length;
 
     const frameRate: CourseRateStats = {
       entries: frameEntries,
-      top1Rate: frameEntries > 0 ? courseSixMonth.filter((x) => x.place === 1).length / frameEntries : null,
-      top2Rate: frameEntries > 0 ? courseSixMonth.filter((x) => x.place === 2).length / frameEntries : null,
-      top3Rate: frameEntries > 0 ? courseSixMonth.filter((x) => x.place === 3).length / frameEntries : null,
+      top1Count: frameTop1Count,
+      top2Count: frameTop2Count,
+      top3Count: frameTop3Count,
+      top1Rate: frameEntries > 0 ? frameTop1Count / frameEntries : null,
+      top2Rate: frameEntries > 0 ? frameTop2Count / frameEntries : null,
+      top3Rate: frameEntries > 0 ? frameTop3Count / frameEntries : null,
     };
 
     let techniqueRate: TechniqueRateStats;

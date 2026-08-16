@@ -3,6 +3,7 @@ import { fetchDay, todayJST } from '@/lib/kyotei-api';
 import { getRaceCardAnalysis, type RaceEntryInput } from '@/lib/aggregate';
 import { stadiumName } from '@/lib/stadiums';
 import AnalysisTable, { type AnalysisGroup } from '@/components/AnalysisTable';
+import CourseRateTable from '@/components/CourseRateTable';
 
 function pct(v: number | null): string {
   return v === null ? '-' : `${(v * 100).toFixed(1)}%`;
@@ -148,6 +149,12 @@ export default async function TodayRacePage({
       </div>
 
       <AnalysisTable entryNumbers={entryNumbers} groups={groups} />
+
+      <div className="space-y-2">
+        <h3 className="text-base font-bold text-[#1995AD]">レーサーコース別着率</h3>
+        <p className="text-xs text-gray-500">直近6カ月・今日の進入コースでの成績</p>
+        <CourseRateTable rows={rows} />
+      </div>
 
       <p className="text-xs text-gray-400 text-center">
         持ちタイム・平均ST系ポイント・展示タイム一位勝率ポイントは今後追加予定です
