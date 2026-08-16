@@ -286,9 +286,12 @@ async function getRacerCourseHistory(
   const result = new Map<number, CourseHistoryEntry[]>();
   if (racerNumbers.length === 0) return result;
 
+  // races をstadium×dateの組み合わせで別途取得すると、行数上限（PostgRESTのdefault max rows）に
+  // 引っかかって大半のレースが欠落する（stadiumNumbers×datesの組み合わせが実質全レース分に膨らむため）。
+  // races側の複合FKでrace_entriesにネスト取得することで、必要な行数（entriesと同数）だけに絞る。
   const { data: entries, error: entryError } = await supabase
     .from('race_entries')
-    .select('date, stadium_number, race_number, racer_number, course_number, place_number')
+    .select('date, stadium_number, race_number, racer_number, course_number, place_number, races(technique_number)')
     .in('racer_number', racerNumbers)
     .gte('date', sinceDate)
     .order('date', { ascending: false })
@@ -296,28 +299,21 @@ async function getRacerCourseHistory(
   if (entryError) throw new Error(`race_entries取得失敗: ${entryError.message}`);
   if (!entries || entries.length === 0) return result;
 
-  const stadiumNumbers = Array.from(new Set(entries.map((e) => e.stadium_number)));
-  const dates = Array.from(new Set(entries.map((e) => e.date)));
-
-  const { data: races, error: raceError } = await supabase
-    .from('races')
-    .select('date, stadium_number, race_number, technique_number')
-    .in('stadium_number', stadiumNumbers)
-    .in('date', dates);
-  if (raceError) throw new Error(`races取得失敗: ${raceError.message}`);
-
-  const techMap = new Map<string, number | null>();
-  for (const r of races ?? []) {
-    techMap.set(`${r.date}_${r.stadium_number}_${r.race_number}`, r.technique_number);
+  interface EntryWithTechnique {
+    date: string;
+    racer_number: number;
+    course_number: number | null;
+    place_number: number | null;
+    races: { technique_number: number | null } | null;
   }
 
-  for (const e of entries) {
+  for (const e of entries as unknown as EntryWithTechnique[]) {
     const list = result.get(e.racer_number) ?? [];
     list.push({
       date: e.date,
       course: e.course_number,
       place: e.place_number,
-      technique: techMap.get(`${e.date}_${e.stadium_number}_${e.race_number}`) ?? null,
+      technique: e.races?.technique_number ?? null,
     });
     result.set(e.racer_number, list);
   }
