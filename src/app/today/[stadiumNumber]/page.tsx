@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { fetchDay, formatClosedTime, todayJST } from '@/lib/kyotei-api';
+import { laneColorStyle } from '@/lib/laneColors';
 
 export default async function TodayStadiumPage({
   params,
@@ -52,16 +53,32 @@ export default async function TodayStadiumPage({
                 </Link>
               </div>
 
-              <ul className="divide-y">
-                {racers.map((r) => (
-                  <li key={r.entryNumber} className="flex items-center gap-3 py-1.5 text-sm">
-                    <span className="w-6 h-6 flex items-center justify-center rounded bg-[#A1D6ED]/50 text-[#1995AD] font-bold text-xs">
-                      {r.entryNumber}
-                    </span>
-                    <span className="font-medium">{r.name}</span>
-                  </li>
-                ))}
-              </ul>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm border-collapse">
+                  <thead>
+                    <tr>
+                      {racers.map((r) => (
+                        <th
+                          key={r.entryNumber}
+                          className="border border-gray-200 px-1 py-1.5 text-center font-bold w-12"
+                          style={laneColorStyle(r.entryNumber)}
+                        >
+                          {r.entryNumber}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      {racers.map((r) => (
+                        <td key={r.entryNumber} className="border border-gray-200 px-1 py-1.5 text-center whitespace-nowrap">
+                          {r.name}
+                        </td>
+                      ))}
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
             </div>
           );
         })}

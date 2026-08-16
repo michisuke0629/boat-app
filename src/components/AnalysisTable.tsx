@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { laneColorStyle } from '@/lib/laneColors';
 
 export interface AnalysisGroup {
   label: string;
@@ -22,7 +23,11 @@ export default function AnalysisTable({
               項目
             </th>
             {entryNumbers.map((n) => (
-              <th key={n} className="border border-white/20 px-1 py-2 text-center w-12">
+              <th
+                key={n}
+                className="border border-white/20 px-1 py-2 text-center w-12"
+                style={laneColorStyle(n)}
+              >
                 {n}
               </th>
             ))}
