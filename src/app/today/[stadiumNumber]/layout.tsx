@@ -2,7 +2,6 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { fetchDay, todayJST } from '@/lib/kyotei-api';
 import { stadiumName } from '@/lib/stadiums';
-import RaceNumberTabs from '@/components/RaceNumberTabs';
 
 export default async function TodayStadiumLayout({
   children,
@@ -34,7 +33,6 @@ export default async function TodayStadiumLayout({
           {rep.day_number ? `（${rep.day_number}日目）` : ''}
         </span>
       </div>
-      <RaceNumberTabs stadiumNumber={num} raceNumbers={stadiumRaces.map((r) => r.race_number)} />
       {children}
     </div>
   );

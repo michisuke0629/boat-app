@@ -31,6 +31,7 @@ export interface ApiRace {
   date: string;
   stadium_number: number;
   race_number: number;
+  closed_at: string | null;
   grade_number: number | null;
   title: string | null;
   subtitle: string | null;
@@ -93,4 +94,11 @@ export function todayJST(): Date {
   const nowJSTMs = Date.now() + 9 * 60 * 60 * 1000;
   const d = new Date(nowJSTMs);
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+}
+
+// closed_at ("2026-08-15 15:17:00") から "HH:mm" を取り出す
+export function formatClosedTime(closedAt: string | null): string {
+  if (!closedAt) return '-';
+  const match = closedAt.match(/(\d{2}:\d{2})/);
+  return match ? match[1] : '-';
 }

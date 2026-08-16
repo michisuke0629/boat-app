@@ -1,12 +1,23 @@
+import Link from 'next/link';
 import { fetchDay, todayJST } from '@/lib/kyotei-api';
-import { getRaceCardStats, type RaceEntryInput } from '@/lib/aggregate';
+import { getRaceCardAnalysis, type RaceEntryInput } from '@/lib/aggregate';
+import { stadiumName } from '@/lib/stadiums';
+import AnalysisSection from '@/components/AnalysisSection';
 
 function pct(v: number | null): string {
   return v === null ? '-' : `${(v * 100).toFixed(1)}%`;
 }
 
+function pctRaw(v: number | null): string {
+  return v === null ? '-' : `${v}%`;
+}
+
 function dec(v: number | null, decimals = 2): string {
   return v === null ? '-' : v.toFixed(decimals);
+}
+
+function num(v: number | null): string {
+  return v === null ? '-' : String(v);
 }
 
 export default async function TodayRacePage({
@@ -27,131 +38,144 @@ export default async function TodayRacePage({
 
   const entries: RaceEntryInput[] = Object.entries(race.racers)
     .filter(([, r]) => r.number != null)
-    .map(([entryKey, r]) => ({
-      entryNumber: Number(entryKey),
-      racerNumber: r.number,
-    }))
+    .map(([entryKey, r]) => {
+      const entryNumber = Number(entryKey);
+      const previewCourse = race.preview?.racers[entryKey]?.course_number ?? null;
+      return {
+        entryNumber,
+        racerNumber: r.number,
+        course: previewCourse ?? entryNumber,
+      };
+    })
     .sort((a, b) => a.entryNumber - b.entryNumber);
 
-  const rows = await getRaceCardStats(stadiumNum, entries);
+  const rows = await getRaceCardAnalysis(stadiumNum, entries);
+  const entryNumbers = rows.map((r) => r.entryNumber);
+
+  const exhibitionTimeByEntry = new Map<number, number | null>();
+  for (const [entryKey, p] of Object.entries(race.preview?.racers ?? {})) {
+    exhibitionTimeByEntry.set(Number(entryKey), p.exhibition_time);
+  }
 
   const kyoteibiyoriUrl = `https://kyoteibiyori.com/race_shusso.php?place_no=${stadiumNum}&race_no=${raceNum}&hiduke=${race.date.replace(/-/g, '')}&slider=1`;
 
   return (
     <div className="space-y-3">
       <div className="flex items-start justify-between flex-wrap gap-2">
-        <div className="space-y-1">
+        <div>
+          <h2 className="text-lg font-bold text-[#1995AD]">
+            {stadiumName(stadiumNum)} {raceNum}R
+          </h2>
           {race.subtitle && <p className="text-sm text-gray-500">{race.subtitle}</p>}
-          <p className="text-xs text-gray-400">
-            1着数・1着率・まくり/差し内訳・出走数・2着数は全競艇場の直近10開催、スタートタイム・持ちタイムは今開催での最速値
-          </p>
         </div>
-        <a
-          href={kyoteibiyoriUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="shrink-0 px-3 py-1.5 rounded text-sm font-medium bg-[#A1D6ED]/50 text-[#1995AD] hover:bg-[#1995AD] hover:text-white transition-colors"
-        >
-          競艇日和（枠順情報） ↗
-        </a>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Link
+            href={`/today/${stadiumNum}#race-${raceNum}`}
+            className="text-sm text-gray-500 hover:text-[#1995AD] hover:underline"
+          >
+            ← レース一覧に戻る
+          </Link>
+          <a
+            href={kyoteibiyoriUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="shrink-0 px-3 py-1.5 rounded text-sm font-medium bg-[#A1D6ED]/50 text-[#1995AD] hover:bg-[#1995AD] hover:text-white transition-colors"
+          >
+            競艇日和（枠順情報） ↗
+          </a>
+        </div>
       </div>
 
-      <div className="bg-white rounded-lg shadow-md overflow-auto">
-        <table className="w-full text-sm whitespace-nowrap">
-          <thead>
-            <tr className="bg-[#1995AD] text-white">
-              <th className="px-3 py-2 text-center">枠</th>
-              <th className="px-3 py-2 text-left">レーサー</th>
-              <th className="px-3 py-2 text-center">
-                1着数
-                <br />
-                1着率
-              </th>
-              <th className="px-3 py-2 text-center">
-                まくり率
-                <br />
-                差し率
-                <br />
-                まくり差し率
-              </th>
-              <th className="px-3 py-2 text-center">
-                出走数
-                <br />
-                1着数
-                <br />
-                2着数
-              </th>
-              <th className="px-3 py-2 text-center">スタートタイム</th>
-              <th className="px-3 py-2 text-center">持ちタイム</th>
-              <th className="px-3 py-2 text-center">
-                得点率
-                <br />
-                得点
-                <br />
-                減点
-              </th>
-              <th className="px-3 py-2 text-center">前検タイム</th>
-              <th className="px-3 py-2 text-center">
-                モーターNo.
-                <br />
-                モーター2連対率
-              </th>
-              <th className="px-3 py-2 text-center">
-                ボートNo.
-                <br />
-                ボート2連対率
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r, i) => (
-              <tr key={r.entryNumber} className={`border-t ${i % 2 === 1 ? 'bg-[#F1F1F2]/60' : ''}`}>
-                <td className="px-3 py-2 text-center font-bold">{r.entryNumber}</td>
-                <td className="px-3 py-2 font-medium">{r.name}</td>
-                <td className="px-3 py-2 text-center">
-                  {r.top1Count10 ?? '-'}
-                  <br />
-                  <span className="font-bold text-[#1995AD]">{pct(r.top1Rate10)}</span>
-                </td>
-                <td className="px-3 py-2 text-center">
-                  {pct(r.makuriRate10)}
-                  <br />
-                  {pct(r.sashiRate10)}
-                  <br />
-                  {pct(r.makuriSashiRate10)}
-                </td>
-                <td className="px-3 py-2 text-center">
-                  {r.entries10 ?? '-'}
-                  <br />
-                  {r.top1Count10 ?? '-'}
-                  <br />
-                  {r.top2Count10 ?? '-'}
-                </td>
-                <td className="px-3 py-2 text-center">{dec(r.bestStartTiming)}</td>
-                <td className="px-3 py-2 text-center">{dec(r.bestExhibitionTime)}</td>
-                <td className="px-3 py-2 text-center">
-                  <span className="font-bold text-[#1995AD]">{r.pointRate ?? '-'}</span>
-                  <br />
-                  {r.points ?? '-'}
-                  <br />
-                  {r.deduction ?? '-'}
-                </td>
-                <td className="px-3 py-2 text-center">{r.precheckTime ?? '-'}</td>
-                <td className="px-3 py-2 text-center">
-                  {r.motorNumber ?? '-'}
-                  <br />
-                  {r.motorTop2Rate ?? '-'}%
-                </td>
-                <td className="px-3 py-2 text-center">
-                  {r.boatNumber ?? '-'}
-                  <br />
-                  {r.boatTop2Rate ?? '-'}%
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <AnalysisSection
+        title="レーサー"
+        entryNumbers={entryNumbers}
+        lines={[{ label: '氏名', values: rows.map((r) => r.name) }]}
+      />
+
+      <AnalysisSection
+        title="持ちタイム"
+        entryNumbers={entryNumbers}
+        lines={[{ label: '持ちタイム', values: rows.map(() => '-') }]}
+      />
+
+      <AnalysisSection
+        title="前検タイム"
+        entryNumbers={entryNumbers}
+        lines={[
+          {
+            label: '展示タイム',
+            values: rows.map((r) => dec(exhibitionTimeByEntry.get(r.entryNumber) ?? null)),
+          },
+        ]}
+      />
+
+      <AnalysisSection
+        title="モーター・ボート"
+        entryNumbers={entryNumbers}
+        lines={[
+          { label: 'モーターNo', values: rows.map((r) => num(r.motorNumber)) },
+          { label: 'モーター2連率', values: rows.map((r) => pctRaw(r.motorTop2Rate)) },
+          { label: 'ボートNo', values: rows.map((r) => num(r.boatNumber)) },
+          { label: 'ボート2連率', values: rows.map((r) => pctRaw(r.boatTop2Rate)) },
+        ]}
+      />
+
+      <AnalysisSection
+        title="枠別着率（直近6ヶ月）"
+        entryNumbers={entryNumbers}
+        lines={[
+          { label: '1着率', values: rows.map((r) => pct(r.frameRate.top1Rate)) },
+          { label: '2着率', values: rows.map((r) => pct(r.frameRate.top2Rate)) },
+          { label: '3着率', values: rows.map((r) => pct(r.frameRate.top3Rate)) },
+        ]}
+      />
+
+      <AnalysisSection
+        title="コース別決まり手率（直近6ヶ月）"
+        entryNumbers={entryNumbers}
+        lines={[
+          { label: '差され/差し', values: rows.map((r) => pct(r.techniqueRate.rate1)) },
+          { label: '捲られ/捲り', values: rows.map((r) => pct(r.techniqueRate.rate2)) },
+          { label: '捲られ差/捲り差', values: rows.map((r) => pct(r.techniqueRate.rate3)) },
+        ]}
+      />
+
+      <AnalysisSection
+        title="決まり手数（直近1年）"
+        entryNumbers={entryNumbers}
+        lines={[
+          { label: '逃げ', values: rows.map((r) => num(r.techniqueCounts.nige)) },
+          { label: '差し', values: rows.map((r) => num(r.techniqueCounts.sashi)) },
+          { label: '捲り', values: rows.map((r) => num(r.techniqueCounts.makuri)) },
+          { label: '捲差', values: rows.map((r) => num(r.techniqueCounts.makuriSa)) },
+        ]}
+      />
+
+      <AnalysisSection
+        title="全枠決まり手数（直近6ヶ月）"
+        entryNumbers={entryNumbers}
+        lines={[
+          { label: '差し', values: rows.map((r) => String(r.allCourseTechniqueCounts.sashi)) },
+          { label: '捲り', values: rows.map((r) => String(r.allCourseTechniqueCounts.makuri)) },
+          { label: '捲差', values: rows.map((r) => String(r.allCourseTechniqueCounts.makuriSa)) },
+        ]}
+      />
+
+      <AnalysisSection
+        title="平均ST・展示タイム勝率ポイント"
+        entryNumbers={entryNumbers}
+        lines={[
+          { label: '平均ST ポイント', values: rows.map(() => '-') },
+          { label: '平均ST順位 ポイント', values: rows.map(() => '-') },
+          { label: '全枠順平均ST ポイント', values: rows.map(() => '-') },
+          { label: '全枠順平均ST順位 ポイント', values: rows.map(() => '-') },
+          { label: '展示タイム一位勝率 ポイント', values: rows.map(() => '-') },
+        ]}
+      />
+
+      <p className="text-xs text-gray-400 text-center">
+        持ちタイム・平均ST系ポイント・展示タイム一位勝率ポイントは今後追加予定です
+      </p>
     </div>
   );
 }
