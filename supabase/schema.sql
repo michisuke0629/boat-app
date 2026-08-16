@@ -49,12 +49,20 @@ create table if not exists race_entries (
   racer_number integer not null,
   course_number integer,          -- 進入コース（実際に走ったコース、resultの値を優先）
   start_timing numeric,           -- 実績スタートタイミング（resultの値）
+  start_rank integer,             -- レース内のスタートタイミング順位（1が最速、ingest時にAPIデータから算出）
   place_number integer,           -- 着順
   exhibition_time numeric,        -- 展示タイム（previewの値）
+  exhibition_rank integer,        -- レース内の展示タイム順位（1が最速、ingest時にAPIデータから算出）
+  race_time numeric,              -- レースタイム（boatrace.jpのレース結果ページをスクレイピングして取得、秒）
   updated_at timestamptz not null default now(),
   primary key (date, stadium_number, race_number, entry_number),
   foreign key (date, stadium_number, race_number) references races (date, stadium_number, race_number) on delete cascade
 );
+
+-- 既存DBへの追従用（新規作成時は上のcreate tableで既に列が存在するためno-op）
+alter table race_entries add column if not exists start_rank integer;
+alter table race_entries add column if not exists exhibition_rank integer;
+alter table race_entries add column if not exists race_time numeric;
 
 create index if not exists idx_entries_racer on race_entries (racer_number, stadium_number, date);
 create index if not exists idx_entries_stadium_course on race_entries (stadium_number, course_number, racer_number);

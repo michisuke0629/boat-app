@@ -264,12 +264,15 @@ export async function getCurrentSeriesPointRank(stadiumNumber: number) {
   return { rows, series };
 }
 
-// 分析情報ページ用: レーサーの全国横断の出走履歴（進入コース・着順・決まり手）を返す
+// 分析情報ページ用: レーサーの全国横断の出走履歴（進入コース・着順・決まり手・ST/展示タイムとその順位）を返す
 interface CourseHistoryEntry {
   date: string;
   course: number | null;
   place: number | null;
   technique: number | null;
+  startTiming: number | null;
+  startRank: number | null;
+  exhibitionRank: number | null;
 }
 
 function monthsAgoISO(months: number): string {
@@ -277,6 +280,25 @@ function monthsAgoISO(months: number): string {
   const d = new Date(nowJSTMs);
   d.setUTCMonth(d.getUTCMonth() - months);
   return d.toISOString().slice(0, 10);
+}
+
+// 「前期」= 11/1〜翌4/30。現時点で直近に完了している前期の期間を返す。
+function getPreviousZenkiRange(): { start: string; end: string } {
+  const nowJSTMs = Date.now() + 9 * 60 * 60 * 1000;
+  const now = new Date(nowJSTMs);
+  const y = now.getUTCFullYear();
+  const m = now.getUTCMonth() + 1; // 1-12
+
+  if (m >= 5 && m <= 10) {
+    // 後期中（5〜10月）: 直近の前期は 前年11/1〜当年4/30
+    return { start: `${y - 1}-11-01`, end: `${y}-04-30` };
+  } else if (m >= 11) {
+    // 前期中（11〜12月）: 進行中の前期はまだ完了していないため、直近の完了済み前期は前年11/1〜当年4/30
+    return { start: `${y - 1}-11-01`, end: `${y}-04-30` };
+  } else {
+    // 前期中（1〜4月）: 進行中の前期はまだ完了していないため、直近の完了済み前期は前々年11/1〜前年4/30
+    return { start: `${y - 2}-11-01`, end: `${y - 1}-04-30` };
+  }
 }
 
 async function getRacerCourseHistory(
@@ -291,7 +313,9 @@ async function getRacerCourseHistory(
   // races側の複合FKでrace_entriesにネスト取得することで、必要な行数（entriesと同数）だけに絞る。
   const { data: entries, error: entryError } = await supabase
     .from('race_entries')
-    .select('date, stadium_number, race_number, racer_number, course_number, place_number, races(technique_number)')
+    .select(
+      'date, stadium_number, race_number, racer_number, course_number, place_number, start_timing, start_rank, exhibition_rank, races(technique_number)'
+    )
     .in('racer_number', racerNumbers)
     .gte('date', sinceDate)
     .order('date', { ascending: false })
@@ -304,6 +328,9 @@ async function getRacerCourseHistory(
     racer_number: number;
     course_number: number | null;
     place_number: number | null;
+    start_timing: number | null;
+    start_rank: number | null;
+    exhibition_rank: number | null;
     races: { technique_number: number | null } | null;
   }
 
@@ -314,11 +341,91 @@ async function getRacerCourseHistory(
       course: e.course_number,
       place: e.place_number,
       technique: e.races?.technique_number ?? null,
+      startTiming: e.start_timing,
+      startRank: e.start_rank,
+      exhibitionRank: e.exhibition_rank,
     });
     result.set(e.racer_number, list);
   }
 
   return result;
+}
+
+// 今節（進行中シリーズ）の1枠以外での最速レースタイムを返す
+async function getCurrentSeriesBestRaceTime(
+  stadiumNumber: number,
+  racerNumbers: number[]
+): Promise<Map<number, number | null>> {
+  const result = new Map<number, number | null>();
+  for (const rn of racerNumbers) result.set(rn, null);
+  if (racerNumbers.length === 0) return result;
+
+  const series = await getActiveSeries(stadiumNumber);
+  if (!series) return result;
+
+  const { data, error } = await supabase
+    .from('race_entries')
+    .select('racer_number, race_time')
+    .eq('stadium_number', stadiumNumber)
+    .in('racer_number', racerNumbers)
+    .gte('date', series.start_date)
+    .neq('course_number', 1)
+    .not('race_time', 'is', null);
+  if (error) throw new Error(`race_entries取得失敗(持ちタイム): ${error.message}`);
+
+  for (const row of data ?? []) {
+    const cur = result.get(row.racer_number) ?? null;
+    if (row.race_time !== null && (cur === null || row.race_time < cur)) {
+      result.set(row.racer_number, row.race_time);
+    }
+  }
+  return result;
+}
+
+// 期間内の平均値を計算（endがnullなら上限なし＝今日まで）
+function averageInPeriod(
+  entries: CourseHistoryEntry[],
+  start: string,
+  end: string | null,
+  field: 'startTiming' | 'startRank'
+): number | null {
+  const filtered = entries.filter((x) => x.date >= start && (end === null || x.date <= end) && x[field] !== null);
+  if (filtered.length === 0) return null;
+  const sum = filtered.reduce((s, x) => s + (x[field] as number), 0);
+  return sum / filtered.length;
+}
+
+interface ScoreItem {
+  entryNumber: number;
+  value: number | null;
+}
+
+// 6艇の値を比較し、1位2pt・2位1ptを付与する（小数点2桁で比較。1位が同値の場合は両方1位扱いで2位なし）
+function scoreTop2(items: ScoreItem[], higherIsBetter: boolean): Map<number, number> {
+  const scores = new Map<number, number>();
+  for (const it of items) scores.set(it.entryNumber, 0);
+
+  const valid = items
+    .filter((it): it is ScoreItem & { value: number } => it.value !== null)
+    .map((it) => ({ entryNumber: it.entryNumber, v: Math.round(it.value * 100) / 100 }));
+  if (valid.length === 0) return scores;
+
+  valid.sort((a, b) => (higherIsBetter ? b.v - a.v : a.v - b.v));
+  const bestValue = valid[0].v;
+  const firstGroup = valid.filter((v) => v.v === bestValue);
+
+  if (firstGroup.length >= 2) {
+    for (const v of firstGroup) scores.set(v.entryNumber, 2);
+    return scores; // 1位が複数いる場合、2位は不在
+  }
+
+  scores.set(firstGroup[0].entryNumber, 2);
+  const rest = valid.slice(1);
+  if (rest.length > 0) {
+    const secondValue = rest[0].v;
+    for (const v of rest.filter((r) => r.v === secondValue)) scores.set(v.entryNumber, 1);
+  }
+  return scores;
 }
 
 // 本日のレース情報: 出走6艇の分析情報をまとめて返す
@@ -358,6 +465,14 @@ export interface AllCourseTechniqueCounts {
   makuriSa: number;
 }
 
+// 平均ST系4項目（前期・直近6/3/1カ月の4期間で1位2pt・2位1ptを集計、各0〜8点）
+export interface StartPointStats {
+  avgStartPoint: number; // 平均STポイント（この枠での平均ST）
+  avgStartRankPoint: number; // 平均ST順位ポイント（この枠での平均ST順位）
+  allCourseAvgStartPoint: number; // 全枠順平均STポイント（全枠での平均ST）
+  allCourseAvgStartRankPoint: number; // 全枠順平均ST順位ポイント（全枠での平均ST順位）
+}
+
 export interface RaceCardAnalysisRow {
   entryNumber: number;
   racerNumber: number;
@@ -371,6 +486,9 @@ export interface RaceCardAnalysisRow {
   techniqueRate: TechniqueRateStats;
   techniqueCounts: TechniqueCounts;
   allCourseTechniqueCounts: AllCourseTechniqueCounts;
+  motiTime: number | null; // 持ちタイム（今節・1枠以外での最速レースタイム、秒）
+  startPoint: StartPointStats;
+  exhibitionTop1Point: number; // 展示タイム一位勝率ポイント（0〜8点）
 }
 
 export async function getRaceCardAnalysis(
@@ -382,13 +500,79 @@ export async function getRaceCardAnalysis(
 
   const sixMonthsAgo = monthsAgoISO(6);
   const oneYearAgo = monthsAgoISO(12);
+  const zenki = getPreviousZenkiRange();
+  // 平均ST系ポイントの「前期」期間まで含めて履歴を取得できるよう、取得開始日は前期開始日と直近1年の早い方に合わせる
+  const historySinceDate = zenki.start < oneYearAgo ? zenki.start : oneYearAgo;
 
-  const [history, precheck, names] = await Promise.all([
-    getRacerCourseHistory(racerNumbers, oneYearAgo),
+  const [history, precheck, names, motiTimeMap] = await Promise.all([
+    getRacerCourseHistory(racerNumbers, historySinceDate),
     getCurrentSeriesPrecheck(stadiumNumber),
     getRacerNames(racerNumbers),
+    getCurrentSeriesBestRaceTime(stadiumNumber, racerNumbers),
   ]);
   const precheckMap = new Map(precheck.rows.map((r) => [r.racerNumber, r]));
+
+  // 平均ST系4項目: 前期・直近6/3カ月・直近1カ月の4期間で、出走6艇を比較して1位2pt・2位1ptを集計
+  const periods: { start: string; end: string | null }[] = [
+    zenki,
+    { start: sixMonthsAgo, end: null },
+    { start: monthsAgoISO(3), end: null },
+    { start: monthsAgoISO(1), end: null },
+  ];
+
+  const periodAverages = entries.map((e) => {
+    const h = history.get(e.racerNumber) ?? [];
+    const courseHist = h.filter((x) => x.course === e.course);
+    return {
+      entryNumber: e.entryNumber,
+      courseAvgST: periods.map((p) => averageInPeriod(courseHist, p.start, p.end, 'startTiming')),
+      courseAvgSTRank: periods.map((p) => averageInPeriod(courseHist, p.start, p.end, 'startRank')),
+      allAvgST: periods.map((p) => averageInPeriod(h, p.start, p.end, 'startTiming')),
+      allAvgSTRank: periods.map((p) => averageInPeriod(h, p.start, p.end, 'startRank')),
+    };
+  });
+
+  function sumPointsAcrossPeriods(getValue: (idx: number, periodIdx: number) => number | null): Map<number, number> {
+    const total = new Map<number, number>();
+    for (const r of periodAverages) total.set(r.entryNumber, 0);
+    periods.forEach((_, periodIdx) => {
+      const items = periodAverages.map((r, idx) => ({ entryNumber: r.entryNumber, value: getValue(idx, periodIdx) }));
+      const scores = scoreTop2(items, false); // ST・ST順位は小さいほど良い
+      for (const [entryNumber, pt] of scores) total.set(entryNumber, (total.get(entryNumber) ?? 0) + pt);
+    });
+    return total;
+  }
+
+  const avgStartPoints = sumPointsAcrossPeriods((idx, p) => periodAverages[idx].courseAvgST[p]);
+  const avgStartRankPoints = sumPointsAcrossPeriods((idx, p) => periodAverages[idx].courseAvgSTRank[p]);
+  const allCourseAvgStartPoints = sumPointsAcrossPeriods((idx, p) => periodAverages[idx].allAvgST[p]);
+  const allCourseAvgStartRankPoints = sumPointsAcrossPeriods((idx, p) => periodAverages[idx].allAvgSTRank[p]);
+
+  // 展示タイム一位勝率ポイント: 直近1年で展示タイムが出走6艇中1位だったレースに絞り、
+  // 1位回数・1着率・2連対率・3連対率の4項目で出走6艇を比較して1位2pt・2位1ptを集計
+  const exhibitionTop1Stats = entries.map((e) => {
+    const h = history.get(e.racerNumber) ?? [];
+    const top1Races = h.filter((x) => x.date >= oneYearAgo && x.exhibitionRank === 1);
+    const count = top1Races.length;
+    return {
+      entryNumber: e.entryNumber,
+      count,
+      top1Rate: count > 0 ? top1Races.filter((x) => x.place === 1).length / count : null,
+      top2Rate: count > 0 ? top1Races.filter((x) => x.place !== null && x.place <= 2).length / count : null,
+      top3Rate: count > 0 ? top1Races.filter((x) => x.place !== null && x.place <= 3).length / count : null,
+    };
+  });
+
+  function scoreExhibitionMetric(getValue: (x: (typeof exhibitionTop1Stats)[number]) => number | null): Map<number, number> {
+    return scoreTop2(
+      exhibitionTop1Stats.map((x) => ({ entryNumber: x.entryNumber, value: getValue(x) })),
+      true // 回数・各種連対率は大きいほど良い
+    );
+  }
+  const exhibitionCountScores = scoreExhibitionMetric((x) => x.count);
+  const exhibitionTop1Scores = scoreExhibitionMetric((x) => x.top1Rate);
+  const exhibitionTop2Scores = scoreExhibitionMetric((x) => x.top2Rate);
+  const exhibitionTop3Scores = scoreExhibitionMetric((x) => x.top3Rate);
 
   return entries.map((e) => {
     const h = history.get(e.racerNumber) ?? [];
@@ -466,6 +650,18 @@ export async function getRaceCardAnalysis(
       techniqueRate,
       techniqueCounts,
       allCourseTechniqueCounts,
+      motiTime: motiTimeMap.get(e.racerNumber) ?? null,
+      startPoint: {
+        avgStartPoint: avgStartPoints.get(e.entryNumber) ?? 0,
+        avgStartRankPoint: avgStartRankPoints.get(e.entryNumber) ?? 0,
+        allCourseAvgStartPoint: allCourseAvgStartPoints.get(e.entryNumber) ?? 0,
+        allCourseAvgStartRankPoint: allCourseAvgStartRankPoints.get(e.entryNumber) ?? 0,
+      },
+      exhibitionTop1Point:
+        (exhibitionCountScores.get(e.entryNumber) ?? 0) +
+        (exhibitionTop1Scores.get(e.entryNumber) ?? 0) +
+        (exhibitionTop2Scores.get(e.entryNumber) ?? 0) +
+        (exhibitionTop3Scores.get(e.entryNumber) ?? 0),
     };
   });
 }

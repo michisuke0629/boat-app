@@ -21,6 +21,16 @@ function num(v: number | null): string {
   return v === null ? '-' : String(v);
 }
 
+// レースタイム（秒）を "1'52\"1" 形式に整形
+function raceTime(v: number | null): string {
+  if (v === null) return '-';
+  const min = Math.floor(v / 60);
+  const rem = v - min * 60;
+  const sec = Math.floor(rem);
+  const deci = Math.round((rem - sec) * 10);
+  return `${min}'${String(sec).padStart(2, '0')}"${deci}`;
+}
+
 export default async function TodayRacePage({
   params,
 }: {
@@ -62,7 +72,7 @@ export default async function TodayRacePage({
 
   const groups: AnalysisGroup[] = [
     { label: 'レーサー名', rows: [{ values: rows.map((r) => r.name) }] },
-    { label: '持ちタイム', rows: [{ values: rows.map(() => '-') }] },
+    { label: '持ちタイム', rows: [{ values: rows.map((r) => raceTime(r.motiTime)) }] },
     {
       label: '前検タイム',
       rows: [{ values: rows.map((r) => dec(exhibitionTimeByEntry.get(r.entryNumber) ?? null)) }],
@@ -114,11 +124,14 @@ export default async function TodayRacePage({
         { subLabel: '捲差', values: rows.map((r) => String(r.allCourseTechniqueCounts.makuriSa)) },
       ],
     },
-    { label: '平均ST ポイント', rows: [{ values: rows.map(() => '-') }] },
-    { label: '平均ST順位 ポイント', rows: [{ values: rows.map(() => '-') }] },
-    { label: '全枠順平均ST ポイント', rows: [{ values: rows.map(() => '-') }] },
-    { label: '全枠順平均ST順位 ポイント', rows: [{ values: rows.map(() => '-') }] },
-    { label: '展示タイム一位\n勝率ポイント', rows: [{ values: rows.map(() => '-') }] },
+    { label: '平均ST ポイント', rows: [{ values: rows.map((r) => String(r.startPoint.avgStartPoint)) }] },
+    { label: '平均ST順位 ポイント', rows: [{ values: rows.map((r) => String(r.startPoint.avgStartRankPoint)) }] },
+    { label: '全枠順平均ST ポイント', rows: [{ values: rows.map((r) => String(r.startPoint.allCourseAvgStartPoint)) }] },
+    {
+      label: '全枠順平均ST順位 ポイント',
+      rows: [{ values: rows.map((r) => String(r.startPoint.allCourseAvgStartRankPoint)) }],
+    },
+    { label: '展示タイム一位\n勝率ポイント', rows: [{ values: rows.map((r) => String(r.exhibitionTop1Point)) }] },
   ];
 
   return (
@@ -155,10 +168,6 @@ export default async function TodayRacePage({
         <p className="text-xs text-gray-500">直近6カ月・今日の進入コースでの成績</p>
         <CourseRateTable rows={rows} />
       </div>
-
-      <p className="text-xs text-gray-400 text-center">
-        持ちタイム・平均ST系ポイント・展示タイム一位勝率ポイントは今後追加予定です
-      </p>
     </div>
   );
 }

@@ -2,11 +2,24 @@
 // cron route (src/app/api/cron/sync-day) と scripts/backfill.ts の両方から呼ばれる
 import { supabaseAdmin } from './supabase';
 import type { ApiRace } from './kyotei-api';
+import { fetchRaceResult } from './scrape';
 
 export interface IngestResult {
   date: string;
   raceCount: number;
   seriesOpened: number;
+}
+
+// レース内の値を比較して順位を返す（1が最良=値が最小、null/未計測は順位なし）
+function computeRankMap(valuesByKey: Record<string, number | null>): Record<string, number | null> {
+  const ranked = Object.entries(valuesByKey).filter((e): e is [string, number] => e[1] !== null);
+  ranked.sort((a, b) => a[1] - b[1]);
+  const result: Record<string, number | null> = {};
+  for (const key of Object.keys(valuesByKey)) result[key] = null;
+  ranked.forEach(([key], i) => {
+    result[key] = i + 1;
+  });
+  return result;
 }
 
 export async function ingestDay(races: ApiRace[], date: string): Promise<IngestResult> {
@@ -113,12 +126,25 @@ export async function ingestDay(races: ApiRace[], date: string): Promise<IngestR
     racer_number: number;
     course_number: number | null;
     start_timing: number | null;
+    start_rank: number | null;
     place_number: number | null;
     exhibition_time: number | null;
+    exhibition_rank: number | null;
     updated_at: string;
   }[] = [];
 
   for (const race of races) {
+    // レース内（同じ6艇）でのスタート順位・展示タイム順位を算出するため、先に全艇分の値を集める
+    const startTimingByKey: Record<string, number | null> = {};
+    const exhibitionTimeByKey: Record<string, number | null> = {};
+    for (const [entryKey, programRacer] of Object.entries(race.racers)) {
+      if (programRacer.number == null) continue;
+      startTimingByKey[entryKey] = race.result?.racers[entryKey]?.start_timing ?? null;
+      exhibitionTimeByKey[entryKey] = race.preview?.racers[entryKey]?.exhibition_time ?? null;
+    }
+    const startRankByKey = computeRankMap(startTimingByKey);
+    const exhibitionRankByKey = computeRankMap(exhibitionTimeByKey);
+
     for (const [entryKey, programRacer] of Object.entries(race.racers)) {
       if (programRacer.number == null) continue; // 中止レース等で選手情報が空のエントリーはスキップ
       const entryNumber = Number(entryKey);
@@ -133,8 +159,10 @@ export async function ingestDay(races: ApiRace[], date: string): Promise<IngestR
         racer_number: programRacer.number,
         course_number: resultRacer?.course_number ?? previewRacer?.course_number ?? null,
         start_timing: resultRacer?.start_timing ?? null,
+        start_rank: startRankByKey[entryKey] ?? null,
         place_number: resultRacer?.place_number ?? null,
         exhibition_time: previewRacer?.exhibition_time ?? null,
+        exhibition_rank: exhibitionRankByKey[entryKey] ?? null,
         updated_at: new Date().toISOString(),
       });
     }
@@ -153,4 +181,52 @@ function addDays(dateStr: string, delta: number): string {
   const d = new Date(`${dateStr}T00:00:00Z`);
   d.setUTCDate(d.getUTCDate() + delta);
   return d.toISOString().slice(0, 10);
+}
+
+export interface IngestRaceTimesResult {
+  date: string;
+  raceCount: number;
+  errorCount: number;
+}
+
+// レースタイムはBoatraceOpenAPIに含まれないため、boatrace.jpのレース結果ページを別途スクレイピングして補完する。
+// 結果が確定している（race.result有）レースのみ対象。ingestDayとは独立して呼べる（cronから当日分ingest後に実行）。
+export async function ingestRaceTimes(races: ApiRace[], date: string): Promise<IngestRaceTimesResult> {
+  const hd = date.replace(/-/g, '');
+  const targets = races.filter((r) => r.result != null);
+
+  const CONCURRENCY = 6;
+  const queue = [...targets];
+  let errorCount = 0;
+
+  async function worker() {
+    while (queue.length > 0) {
+      const race = queue.shift();
+      if (!race) break;
+      try {
+        const results = await fetchRaceResult(race.stadium_number, race.race_number, hd);
+        if (results.length === 0) continue;
+        const { error } = await supabaseAdmin.from('race_entries').upsert(
+          results.map((r) => ({
+            date: race.date,
+            stadium_number: race.stadium_number,
+            race_number: race.race_number,
+            entry_number: r.entryNumber,
+            racer_number: r.racerNumber,
+            race_time: r.raceTime,
+            updated_at: new Date().toISOString(),
+          })),
+          { onConflict: 'date,stadium_number,race_number,entry_number' }
+        );
+        if (error) throw new Error(error.message);
+      } catch {
+        // ページ構造変化・未確定・タイムアウト等で失敗しても他のレースの処理は継続する
+        errorCount++;
+      }
+    }
+  }
+
+  await Promise.all(Array.from({ length: CONCURRENCY }, () => worker()));
+
+  return { date, raceCount: targets.length, errorCount };
 }

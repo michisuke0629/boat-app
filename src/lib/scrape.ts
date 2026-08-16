@@ -22,6 +22,12 @@ export interface PrecheckEntry {
   precheckTime: number | null;
 }
 
+export interface RaceResultEntry {
+  entryNumber: number;
+  racerNumber: number;
+  raceTime: number | null; // 秒（例: 1'52"1 → 112.1）
+}
+
 function toNumber(text: string | undefined): number | null {
   if (!text) return null;
   const n = parseFloat(text.replace(/[%\s]/g, ''));
@@ -89,6 +95,44 @@ export async function fetchPrecheck(stadiumNumber: number, hd: string): Promise<
       boatNumber: toNumber($(tds[6]).text()),
       boatTop2Rate: toNumber($(tds[7]).text()),
       precheckTime: toNumber($(tds[8]).text()),
+    });
+  });
+  return entries;
+}
+
+// レースタイム（例: 1'52"1）を秒に変換
+function parseRaceTime(text: string): number | null {
+  const m = text.trim().match(/^(\d+)'(\d+)"(\d)$/);
+  if (!m) return null;
+  const [, min, sec, deci] = m;
+  return Number(min) * 60 + Number(sec) + Number(deci) / 10;
+}
+
+// レース結果 /owpc/pc/race/raceresult?rno={rno}&jcd={jcd}&hd={hd}
+export async function fetchRaceResult(
+  stadiumNumber: number,
+  raceNumber: number,
+  hd: string
+): Promise<RaceResultEntry[]> {
+  const url = `https://www.boatrace.jp/owpc/pc/race/raceresult?rno=${raceNumber}&jcd=${jcdParam(stadiumNumber)}&hd=${hd}`;
+  const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
+  if (!res.ok) throw new Error(`raceresult取得失敗: ${res.status} (${url})`);
+  const html = await res.text();
+  const $ = cheerio.load(html);
+
+  const entries: RaceResultEntry[] = [];
+  $('table.is-w495 tbody tr').each((_, tr) => {
+    const tds = $(tr).find('td');
+    if (tds.length < 4) return; // 想定外の行構造（中止レース等）はスキップ
+
+    const entryNumber = toNumber($(tds[1]).text());
+    const racerNumber = toNumber($(tds[2]).find('span').first().text());
+    if (entryNumber === null || racerNumber === null) return;
+
+    entries.push({
+      entryNumber,
+      racerNumber,
+      raceTime: parseRaceTime($(tds[3]).text()),
     });
   });
   return entries;
