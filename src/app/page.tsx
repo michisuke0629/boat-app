@@ -1,9 +1,12 @@
+import { Fragment } from 'react';
 import Link from 'next/link';
 import { fetchDay, todayJST, type ApiRace } from '@/lib/kyotei-api';
 import { STADIUMS } from '@/lib/stadiums';
 
 // 開催中のレースは日中に随時更新されるため、ビルド時の静的化を避けて毎回サーバーで取得する
 export const dynamic = 'force-dynamic';
+
+const STADIUMS_PER_ROW = 4;
 
 function formatDateJST(date: Date): string {
   return `${date.getUTCFullYear()}年${date.getUTCMonth() + 1}月${date.getUTCDate()}日`;
@@ -19,10 +22,17 @@ function dayNumberByStadium(races: ApiRace[]): Map<number, number | null> {
   return map;
 }
 
+function chunk<T>(arr: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
+
 export default async function Home() {
   const date = todayJST();
   const races = await fetchDay(date);
   const dayNumbers = dayNumberByStadium(races);
+  const rows = chunk(STADIUMS, STADIUMS_PER_ROW);
 
   return (
     <div className="space-y-4">
@@ -39,36 +49,50 @@ export default async function Home() {
         </Link>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-        {STADIUMS.map((stadium) => {
-          const dayNumber = dayNumbers.get(stadium.number) ?? null;
-          const hasRace = dayNumber !== null;
-          const content = (
-            <>
-              <div className="font-bold text-lg">{stadium.name}</div>
-              <div className={hasRace ? 'text-[#1995AD] font-medium' : 'text-gray-400'}>
-                {hasRace ? `${dayNumber}日目` : 'ー'}
-              </div>
-            </>
-          );
-
-          return hasRace ? (
-            <Link
-              key={stadium.number}
-              href={`/today/${stadium.number}`}
-              className="bg-white rounded-lg shadow-md px-3 py-3 text-center hover:shadow-lg hover:bg-[#A1D6ED]/20 transition-all"
-            >
-              {content}
-            </Link>
-          ) : (
-            <div
-              key={stadium.number}
-              className="bg-white/60 rounded-lg shadow-sm px-3 py-3 text-center text-gray-400"
-            >
-              {content}
-            </div>
-          );
-        })}
+      <div className="bg-white rounded-lg shadow-md overflow-x-auto">
+        <table className="w-full text-sm border-collapse">
+          <tbody>
+            {rows.map((row, i) => (
+              <Fragment key={i}>
+                <tr className={i % 2 === 1 ? 'bg-[#F1F1F2]/60' : ''}>
+                  {row.map((stadium) => {
+                    const hasRace = dayNumbers.get(stadium.number) != null;
+                    return (
+                      <td
+                        key={stadium.number}
+                        className="border border-gray-200 px-2 py-2 text-center font-bold"
+                      >
+                        {hasRace ? (
+                          <Link href={`/today/${stadium.number}`} className="text-[#1995AD] hover:underline">
+                            {stadium.name}
+                          </Link>
+                        ) : (
+                          <span className="text-gray-400">{stadium.name}</span>
+                        )}
+                      </td>
+                    );
+                  })}
+                </tr>
+                <tr className={i % 2 === 1 ? 'bg-[#F1F1F2]/60' : ''}>
+                  {row.map((stadium) => {
+                    const dayNumber = dayNumbers.get(stadium.number) ?? null;
+                    const hasRace = dayNumber !== null;
+                    return (
+                      <td
+                        key={stadium.number}
+                        className={`border border-gray-200 px-2 py-1.5 text-center text-xs ${
+                          hasRace ? 'text-[#1995AD] font-medium' : 'text-gray-400'
+                        }`}
+                      >
+                        {hasRace ? `${dayNumber}日目` : 'ー'}
+                      </td>
+                    );
+                  })}
+                </tr>
+              </Fragment>
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
   );

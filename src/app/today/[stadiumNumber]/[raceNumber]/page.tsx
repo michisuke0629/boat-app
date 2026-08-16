@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { fetchDay, todayJST } from '@/lib/kyotei-api';
 import { getRaceCardAnalysis, type RaceEntryInput } from '@/lib/aggregate';
 import { stadiumName } from '@/lib/stadiums';
-import AnalysisSection from '@/components/AnalysisSection';
+import AnalysisTable, { type AnalysisGroup } from '@/components/AnalysisTable';
 
 function pct(v: number | null): string {
   return v === null ? '-' : `${(v * 100).toFixed(1)}%`;
@@ -59,6 +59,67 @@ export default async function TodayRacePage({
 
   const kyoteibiyoriUrl = `https://kyoteibiyori.com/race_shusso.php?place_no=${stadiumNum}&race_no=${raceNum}&hiduke=${race.date.replace(/-/g, '')}&slider=1`;
 
+  const groups: AnalysisGroup[] = [
+    { label: 'レーサー名', rows: [{ values: rows.map((r) => r.name) }] },
+    { label: '持ちタイム', rows: [{ values: rows.map(() => '-') }] },
+    {
+      label: '前検タイム',
+      rows: [{ values: rows.map((r) => dec(exhibitionTimeByEntry.get(r.entryNumber) ?? null)) }],
+    },
+    {
+      label: 'モーター',
+      rows: [
+        { subLabel: 'No', values: rows.map((r) => num(r.motorNumber)) },
+        { subLabel: '2連率', values: rows.map((r) => pctRaw(r.motorTop2Rate)) },
+      ],
+    },
+    {
+      label: 'ボート',
+      rows: [
+        { subLabel: 'No', values: rows.map((r) => num(r.boatNumber)) },
+        { subLabel: '2連率', values: rows.map((r) => pctRaw(r.boatTop2Rate)) },
+      ],
+    },
+    {
+      label: '枠別\n着率',
+      rows: [
+        { subLabel: '1着率', values: rows.map((r) => pct(r.frameRate.top1Rate)) },
+        { subLabel: '2着率', values: rows.map((r) => pct(r.frameRate.top2Rate)) },
+        { subLabel: '3着率', values: rows.map((r) => pct(r.frameRate.top3Rate)) },
+      ],
+    },
+    {
+      label: 'コース別\n決まり手率',
+      rows: [
+        { subLabel: '差され/差し', values: rows.map((r) => pct(r.techniqueRate.rate1)) },
+        { subLabel: '捲られ/捲り', values: rows.map((r) => pct(r.techniqueRate.rate2)) },
+        { subLabel: '捲られ差\n/捲り差', values: rows.map((r) => pct(r.techniqueRate.rate3)) },
+      ],
+    },
+    {
+      label: '決まり手数',
+      rows: [
+        { subLabel: '逃げ', values: rows.map((r) => num(r.techniqueCounts.nige)) },
+        { subLabel: '差し', values: rows.map((r) => num(r.techniqueCounts.sashi)) },
+        { subLabel: '捲り', values: rows.map((r) => num(r.techniqueCounts.makuri)) },
+        { subLabel: '捲差', values: rows.map((r) => num(r.techniqueCounts.makuriSa)) },
+      ],
+    },
+    {
+      label: '全枠\n決まり手数',
+      rows: [
+        { subLabel: '差し', values: rows.map((r) => String(r.allCourseTechniqueCounts.sashi)) },
+        { subLabel: '捲り', values: rows.map((r) => String(r.allCourseTechniqueCounts.makuri)) },
+        { subLabel: '捲差', values: rows.map((r) => String(r.allCourseTechniqueCounts.makuriSa)) },
+      ],
+    },
+    { label: '平均ST ポイント', rows: [{ values: rows.map(() => '-') }] },
+    { label: '平均ST順位 ポイント', rows: [{ values: rows.map(() => '-') }] },
+    { label: '全枠順平均ST ポイント', rows: [{ values: rows.map(() => '-') }] },
+    { label: '全枠順平均ST順位 ポイント', rows: [{ values: rows.map(() => '-') }] },
+    { label: '展示タイム一位\n勝率ポイント', rows: [{ values: rows.map(() => '-') }] },
+  ];
+
   return (
     <div className="space-y-3">
       <div className="flex items-start justify-between flex-wrap gap-2">
@@ -86,92 +147,7 @@ export default async function TodayRacePage({
         </div>
       </div>
 
-      <AnalysisSection
-        title="レーサー"
-        entryNumbers={entryNumbers}
-        lines={[{ label: '氏名', values: rows.map((r) => r.name) }]}
-      />
-
-      <AnalysisSection
-        title="持ちタイム"
-        entryNumbers={entryNumbers}
-        lines={[{ label: '持ちタイム', values: rows.map(() => '-') }]}
-      />
-
-      <AnalysisSection
-        title="前検タイム"
-        entryNumbers={entryNumbers}
-        lines={[
-          {
-            label: '展示タイム',
-            values: rows.map((r) => dec(exhibitionTimeByEntry.get(r.entryNumber) ?? null)),
-          },
-        ]}
-      />
-
-      <AnalysisSection
-        title="モーター・ボート"
-        entryNumbers={entryNumbers}
-        lines={[
-          { label: 'モーターNo', values: rows.map((r) => num(r.motorNumber)) },
-          { label: 'モーター2連率', values: rows.map((r) => pctRaw(r.motorTop2Rate)) },
-          { label: 'ボートNo', values: rows.map((r) => num(r.boatNumber)) },
-          { label: 'ボート2連率', values: rows.map((r) => pctRaw(r.boatTop2Rate)) },
-        ]}
-      />
-
-      <AnalysisSection
-        title="枠別着率（直近6ヶ月）"
-        entryNumbers={entryNumbers}
-        lines={[
-          { label: '1着率', values: rows.map((r) => pct(r.frameRate.top1Rate)) },
-          { label: '2着率', values: rows.map((r) => pct(r.frameRate.top2Rate)) },
-          { label: '3着率', values: rows.map((r) => pct(r.frameRate.top3Rate)) },
-        ]}
-      />
-
-      <AnalysisSection
-        title="コース別決まり手率（直近6ヶ月）"
-        entryNumbers={entryNumbers}
-        lines={[
-          { label: '差され/差し', values: rows.map((r) => pct(r.techniqueRate.rate1)) },
-          { label: '捲られ/捲り', values: rows.map((r) => pct(r.techniqueRate.rate2)) },
-          { label: '捲られ差/捲り差', values: rows.map((r) => pct(r.techniqueRate.rate3)) },
-        ]}
-      />
-
-      <AnalysisSection
-        title="決まり手数（直近1年）"
-        entryNumbers={entryNumbers}
-        lines={[
-          { label: '逃げ', values: rows.map((r) => num(r.techniqueCounts.nige)) },
-          { label: '差し', values: rows.map((r) => num(r.techniqueCounts.sashi)) },
-          { label: '捲り', values: rows.map((r) => num(r.techniqueCounts.makuri)) },
-          { label: '捲差', values: rows.map((r) => num(r.techniqueCounts.makuriSa)) },
-        ]}
-      />
-
-      <AnalysisSection
-        title="全枠決まり手数（直近6ヶ月）"
-        entryNumbers={entryNumbers}
-        lines={[
-          { label: '差し', values: rows.map((r) => String(r.allCourseTechniqueCounts.sashi)) },
-          { label: '捲り', values: rows.map((r) => String(r.allCourseTechniqueCounts.makuri)) },
-          { label: '捲差', values: rows.map((r) => String(r.allCourseTechniqueCounts.makuriSa)) },
-        ]}
-      />
-
-      <AnalysisSection
-        title="平均ST・展示タイム勝率ポイント"
-        entryNumbers={entryNumbers}
-        lines={[
-          { label: '平均ST ポイント', values: rows.map(() => '-') },
-          { label: '平均ST順位 ポイント', values: rows.map(() => '-') },
-          { label: '全枠順平均ST ポイント', values: rows.map(() => '-') },
-          { label: '全枠順平均ST順位 ポイント', values: rows.map(() => '-') },
-          { label: '展示タイム一位勝率 ポイント', values: rows.map(() => '-') },
-        ]}
-      />
+      <AnalysisTable entryNumbers={entryNumbers} groups={groups} />
 
       <p className="text-xs text-gray-400 text-center">
         持ちタイム・平均ST系ポイント・展示タイム一位勝率ポイントは今後追加予定です
