@@ -85,6 +85,10 @@ export default async function TodayRacePage({
     return <p className="text-gray-400 py-6 text-center">本日このレースの開催情報がありません</p>;
   }
 
+  const stadiumRaces = races
+    .filter((r) => r.stadium_number === stadiumNum)
+    .sort((a, b) => a.race_number - b.race_number);
+
   const entries: RaceEntryInput[] = Object.entries(race.racers)
     .filter(([, r]) => r.number != null)
     .map(([entryKey, r]) => {
@@ -225,6 +229,22 @@ export default async function TodayRacePage({
             競艇日和（枠順情報） ↗
           </a>
         </div>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        {stadiumRaces.map((r) => (
+          <Link
+            key={r.race_number}
+            href={`/today/${stadiumNum}/${r.race_number}`}
+            className={`w-10 h-9 flex items-center justify-center rounded text-sm font-medium transition-colors ${
+              r.race_number === raceNum
+                ? 'bg-[#1995AD] text-white'
+                : 'bg-[#A1D6ED]/50 text-[#1995AD] hover:bg-[#1995AD] hover:text-white'
+            }`}
+          >
+            {r.race_number}R
+          </Link>
+        ))}
       </div>
 
       <AnalysisTable entryNumbers={entryNumbers} groups={groups} />
