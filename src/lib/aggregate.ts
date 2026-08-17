@@ -395,13 +395,14 @@ function averageInPeriod(
   return sum / filtered.length;
 }
 
-interface ScoreItem {
+export interface ScoreItem {
   entryNumber: number;
   value: number | null;
 }
 
 // 6艇の値を比較し、1位2pt・2位1ptを付与する（小数点2桁で比較。1位が同値の場合は両方1位扱いで2位なし）
-function scoreTop2(items: ScoreItem[], higherIsBetter: boolean): Map<number, number> {
+// ページ側（ポイント詳細テーブルのセル色分け）からも同じ判定ロジックを再利用するためexport
+export function scoreTop2(items: ScoreItem[], higherIsBetter: boolean): Map<number, number> {
   const scores = new Map<number, number>();
   for (const it of items) scores.set(it.entryNumber, 0);
 
@@ -473,6 +474,18 @@ export interface StartPointStats {
   allCourseAvgStartRankPoint: number; // 全枠順平均ST順位ポイント（全枠での平均ST順位）
 }
 
+// ポイント算出の元になった生値（ポイント詳細テーブル表示用）。期間の並びは [前期, 直近6ヶ月, 直近3ヶ月, 直近1ヶ月]
+export interface PointDetail {
+  courseAvgST: (number | null)[];
+  courseAvgSTRank: (number | null)[];
+  allAvgST: (number | null)[];
+  allAvgSTRank: (number | null)[];
+  exhibitionCount: number;
+  exhibitionTop1Rate: number | null;
+  exhibitionTop2Rate: number | null;
+  exhibitionTop3Rate: number | null;
+}
+
 export interface RaceCardAnalysisRow {
   entryNumber: number;
   racerNumber: number;
@@ -488,7 +501,8 @@ export interface RaceCardAnalysisRow {
   allCourseTechniqueCounts: AllCourseTechniqueCounts;
   motiTime: number | null; // 持ちタイム（今節・1枠以外での最速レースタイム、秒）
   startPoint: StartPointStats;
-  exhibitionTop1Point: number; // 展示タイム一位勝率ポイント（0〜8点）
+  exhibitionTop1Point: number; // 展示タイム勝率ポイント（0〜8点）
+  pointDetail: PointDetail;
 }
 
 export async function getRaceCardAnalysis(
@@ -532,21 +546,27 @@ export async function getRaceCardAnalysis(
     };
   });
 
-  function sumPointsAcrossPeriods(getValue: (idx: number, periodIdx: number) => number | null): Map<number, number> {
+  function sumPointsAcrossPeriods(
+    periodIndices: number[],
+    getValue: (idx: number, periodIdx: number) => number | null
+  ): Map<number, number> {
     const total = new Map<number, number>();
     for (const r of periodAverages) total.set(r.entryNumber, 0);
-    periods.forEach((_, periodIdx) => {
+    for (const periodIdx of periodIndices) {
       const items = periodAverages.map((r, idx) => ({ entryNumber: r.entryNumber, value: getValue(idx, periodIdx) }));
       const scores = scoreTop2(items, false); // ST・ST順位は小さいほど良い
       for (const [entryNumber, pt] of scores) total.set(entryNumber, (total.get(entryNumber) ?? 0) + pt);
-    });
+    }
     return total;
   }
 
-  const avgStartPoints = sumPointsAcrossPeriods((idx, p) => periodAverages[idx].courseAvgST[p]);
-  const avgStartRankPoints = sumPointsAcrossPeriods((idx, p) => periodAverages[idx].courseAvgSTRank[p]);
-  const allCourseAvgStartPoints = sumPointsAcrossPeriods((idx, p) => periodAverages[idx].allAvgST[p]);
-  const allCourseAvgStartRankPoints = sumPointsAcrossPeriods((idx, p) => periodAverages[idx].allAvgSTRank[p]);
+  // periods配列のインデックス: 0=前期, 1=直近6ヶ月, 2=直近3ヶ月, 3=直近1ヶ月
+  const avgStartPoints = sumPointsAcrossPeriods([0, 1, 2, 3], (idx, p) => periodAverages[idx].courseAvgST[p]);
+  const avgStartRankPoints = sumPointsAcrossPeriods([0, 1, 2, 3], (idx, p) => periodAverages[idx].courseAvgSTRank[p]);
+  // 全枠順平均STポイントは前期・直近3ヶ月・直近1ヶ月の3期間（直近6ヶ月は含めない）
+  const allCourseAvgStartPoints = sumPointsAcrossPeriods([0, 2, 3], (idx, p) => periodAverages[idx].allAvgST[p]);
+  // 全枠順平均ST順位ポイントは直近3ヶ月・直近1ヶ月の2期間のみ
+  const allCourseAvgStartRankPoints = sumPointsAcrossPeriods([2, 3], (idx, p) => periodAverages[idx].allAvgSTRank[p]);
 
   // 展示タイム一位勝率ポイント: 直近1年で展示タイムが出走6艇中1位だったレースに絞り、
   // 1位回数・1着率・2連対率・3連対率の4項目で出走6艇を比較して1位2pt・2位1ptを集計
@@ -574,7 +594,7 @@ export async function getRaceCardAnalysis(
   const exhibitionTop2Scores = scoreExhibitionMetric((x) => x.top2Rate);
   const exhibitionTop3Scores = scoreExhibitionMetric((x) => x.top3Rate);
 
-  return entries.map((e) => {
+  return entries.map((e, idx) => {
     const h = history.get(e.racerNumber) ?? [];
     const pk = precheckMap.get(e.racerNumber);
 
@@ -662,6 +682,16 @@ export async function getRaceCardAnalysis(
         (exhibitionTop1Scores.get(e.entryNumber) ?? 0) +
         (exhibitionTop2Scores.get(e.entryNumber) ?? 0) +
         (exhibitionTop3Scores.get(e.entryNumber) ?? 0),
+      pointDetail: {
+        courseAvgST: periodAverages[idx].courseAvgST,
+        courseAvgSTRank: periodAverages[idx].courseAvgSTRank,
+        allAvgST: periodAverages[idx].allAvgST,
+        allAvgSTRank: periodAverages[idx].allAvgSTRank,
+        exhibitionCount: exhibitionTop1Stats[idx].count,
+        exhibitionTop1Rate: exhibitionTop1Stats[idx].top1Rate,
+        exhibitionTop2Rate: exhibitionTop1Stats[idx].top2Rate,
+        exhibitionTop3Rate: exhibitionTop1Stats[idx].top3Rate,
+      },
     };
   });
 }

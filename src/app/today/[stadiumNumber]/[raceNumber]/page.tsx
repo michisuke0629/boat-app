@@ -1,6 +1,7 @@
+import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { fetchDay, todayJST } from '@/lib/kyotei-api';
-import { getRaceCardAnalysis, type RaceEntryInput } from '@/lib/aggregate';
+import { getRaceCardAnalysis, scoreTop2, type RaceEntryInput, type RaceCardAnalysisRow } from '@/lib/aggregate';
 import { stadiumName } from '@/lib/stadiums';
 import AnalysisTable, { type AnalysisGroup } from '@/components/AnalysisTable';
 import CourseRateTable from '@/components/CourseRateTable';
@@ -29,6 +30,43 @@ function raceTime(v: number | null): string {
   const sec = Math.floor(rem);
   const deci = Math.round((rem - sec) * 10);
   return `${min}'${String(sec).padStart(2, '0')}"${deci}`;
+}
+
+const PERIOD_LABELS = ['前期', '直近6ヶ月', '直近3ヶ月', '直近1ヶ月'];
+
+// ポイント詳細テーブルの1セル: 出走6艇中の順位（scoreTop2と同じ判定）に応じて背景色を付ける
+function detailCells(
+  rows: RaceCardAnalysisRow[],
+  getValue: (r: RaceCardAnalysisRow) => number | null,
+  higherIsBetter: boolean,
+  format: (v: number | null) => string
+): ReactNode[] {
+  const tiers = scoreTop2(
+    rows.map((r) => ({ entryNumber: r.entryNumber, value: getValue(r) })),
+    higherIsBetter
+  );
+  return rows.map((r) => {
+    const tier = tiers.get(r.entryNumber) ?? 0;
+    const bg = tier === 2 ? 'bg-red-100' : tier === 1 ? 'bg-yellow-100' : '';
+    return (
+      <span key={r.entryNumber} className={`block -mx-1 -my-1.5 px-1 py-1.5 ${bg}`}>
+        {format(getValue(r))}
+      </span>
+    );
+  });
+}
+
+// 期間ごとの行（平均ST系のポイント詳細用）: periodIndices=[0=前期,1=直近6ヶ月,2=直近3ヶ月,3=直近1ヶ月]の中から表示する期間を指定
+function periodDetailRows(
+  rows: RaceCardAnalysisRow[],
+  periodIndices: number[],
+  getValues: (r: RaceCardAnalysisRow) => (number | null)[],
+  format: (v: number | null) => string
+) {
+  return periodIndices.map((p) => ({
+    subLabel: PERIOD_LABELS[p],
+    values: detailCells(rows, (r) => getValues(r)[p], false, format),
+  }));
 }
 
 export default async function TodayRacePage({
@@ -131,7 +169,40 @@ export default async function TodayRacePage({
       label: '全枠順平均ST順位 ポイント',
       rows: [{ values: rows.map((r) => String(r.startPoint.allCourseAvgStartRankPoint)) }],
     },
-    { label: '展示タイム一位\n勝率ポイント', rows: [{ values: rows.map((r) => String(r.exhibitionTop1Point)) }] },
+    { label: '展示タイム\n勝率ポイント', rows: [{ values: rows.map((r) => String(r.exhibitionTop1Point)) }] },
+  ];
+
+  // ＜ポイント詳細＞: 上記5つのポイント項目の算出根拠（生値、期間別）
+  const decFormat = (v: number | null) => (v === null ? '-' : v.toFixed(2));
+  const rateFormat = (v: number | null) => (v === null ? '-' : `${(v * 100).toFixed(1)}%`);
+  const countFormat = (v: number | null) => (v === null ? '-' : String(v));
+
+  const pointDetailGroups: AnalysisGroup[] = [
+    {
+      label: '平均\nスタート\nタイム',
+      rows: periodDetailRows(rows, [0, 1, 2, 3], (r) => r.pointDetail.courseAvgST, decFormat),
+    },
+    {
+      label: '平均\nスタート\n順位',
+      rows: periodDetailRows(rows, [0, 1, 2, 3], (r) => r.pointDetail.courseAvgSTRank, decFormat),
+    },
+    {
+      label: '全枠順\n平均スタート\nタイム',
+      rows: periodDetailRows(rows, [0, 2, 3], (r) => r.pointDetail.allAvgST, decFormat),
+    },
+    {
+      label: '全枠順\n平均スタート\n順位',
+      rows: periodDetailRows(rows, [2, 3], (r) => r.pointDetail.allAvgSTRank, decFormat),
+    },
+    {
+      label: '展示タイム\n勝率',
+      rows: [
+        { subLabel: '1位回数', values: detailCells(rows, (r) => r.pointDetail.exhibitionCount, true, countFormat) },
+        { subLabel: '1着率', values: detailCells(rows, (r) => r.pointDetail.exhibitionTop1Rate, true, rateFormat) },
+        { subLabel: '2連対率', values: detailCells(rows, (r) => r.pointDetail.exhibitionTop2Rate, true, rateFormat) },
+        { subLabel: '3連対率', values: detailCells(rows, (r) => r.pointDetail.exhibitionTop3Rate, true, rateFormat) },
+      ],
+    },
   ];
 
   return (
@@ -162,6 +233,14 @@ export default async function TodayRacePage({
       </div>
 
       <AnalysisTable entryNumbers={entryNumbers} groups={groups} />
+
+      <div className="space-y-2">
+        <h3 className="text-base font-bold text-[#1995AD]">＜ポイント詳細＞</h3>
+        <p className="text-xs text-gray-500">
+          上記5項目のポイント算出根拠。出走6艇中で最も良い値を赤、2番目を黄で表示（1位が同値の場合は両方赤で2位なし）
+        </p>
+        <AnalysisTable entryNumbers={entryNumbers} groups={pointDetailGroups} />
+      </div>
 
       <div className="space-y-2">
         <h3 className="text-base font-bold text-[#1995AD]">レーサーコース別着率</h3>
