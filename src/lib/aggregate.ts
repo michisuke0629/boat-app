@@ -491,6 +491,7 @@ export interface RaceCardAnalysisRow {
   racerNumber: number;
   name: string;
   course: number;
+  precheckTime: number | null; // 前検タイム（今節の前検、series_precheckより）
   motorNumber: number | null;
   motorTop2Rate: number | null;
   boatNumber: number | null;
@@ -662,6 +663,7 @@ export async function getRaceCardAnalysis(
       racerNumber: e.racerNumber,
       name: names.get(e.racerNumber) ?? `登録番号${e.racerNumber}`,
       course: e.course,
+      precheckTime: pk?.precheckTime ?? null,
       motorNumber: pk?.motorNumber ?? null,
       motorTop2Rate: pk?.motorTop2Rate ?? null,
       boatNumber: pk?.boatNumber ?? null,

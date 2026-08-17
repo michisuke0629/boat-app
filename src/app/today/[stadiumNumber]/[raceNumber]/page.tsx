@@ -101,11 +101,6 @@ export default async function TodayRacePage({
   const rows = await getRaceCardAnalysis(stadiumNum, entries);
   const entryNumbers = rows.map((r) => r.entryNumber);
 
-  const exhibitionTimeByEntry = new Map<number, number | null>();
-  for (const [entryKey, p] of Object.entries(race.preview?.racers ?? {})) {
-    exhibitionTimeByEntry.set(Number(entryKey), p.exhibition_time);
-  }
-
   const kyoteibiyoriUrl = `https://kyoteibiyori.com/race_shusso.php?place_no=${stadiumNum}&race_no=${raceNum}&hiduke=${race.date.replace(/-/g, '')}&slider=1`;
 
   const groups: AnalysisGroup[] = [
@@ -113,7 +108,7 @@ export default async function TodayRacePage({
     { label: '持ちタイム', rows: [{ values: rows.map((r) => raceTime(r.motiTime)) }] },
     {
       label: '前検タイム',
-      rows: [{ values: rows.map((r) => dec(exhibitionTimeByEntry.get(r.entryNumber) ?? null)) }],
+      rows: [{ values: rows.map((r) => dec(r.precheckTime)) }],
     },
     {
       label: 'モーター',
