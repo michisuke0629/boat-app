@@ -208,7 +208,7 @@
   <div class="flow-row">
     <div class="box"><b>データ取得元 ①</b>BoatraceOpenAPI<div class="small">出走表・直前情報・結果（JSON）</div></div>
     <div class="arrow-h">↑ fetch</div>
-    <div class="box"><b>データ取得元 ②</b>boatrace.jp公式サイト<div class="small">得点率・前検タイム（HTML scrape）</div></div>
+    <div class="box"><b>データ取得元 ②</b>boatrace.jp公式サイト<div class="small">得点率・前検タイム・レースタイム（HTML scrape）</div></div>
     <div class="arrow-h">↑ fetch</div>
     <div class="box"><b>ブラウザ</b>ユーザーがページ閲覧<div class="small">Server ComponentsがSupabaseを直接読取</div></div>
   </div>
@@ -236,8 +236,8 @@
   <table>
     <tr><th>取得データ</th><th>主なフィールド</th><th>用途</th></tr>
     <tr><td>出走表</td><td><code>racers[].number</code>（登録番号）, <code>rank_number</code>（級別）</td><td>選手マスタの更新</td></tr>
-    <tr><td>直前情報</td><td><code>preview.racers[].exhibition_time</code>, <code>course_number</code></td><td>コース別持ちタイム（要件4）</td></tr>
-    <tr><td>結果</td><td><code>result.technique_number</code>（決まり手）, <code>place_number</code>（着順）, <code>start_timing</code>（実績ST）</td><td>1着率・決まり手内訳（要件1,2）、コース別ST（要件3）</td></tr>
+    <tr><td>直前情報</td><td><code>preview.racers[].exhibition_time</code>, <code>course_number</code></td><td>コース別持ちタイム（要件4）、分析情報ページの展示タイム順位算出</td></tr>
+    <tr><td>結果</td><td><code>result.technique_number</code>（決まり手）, <code>place_number</code>（着順）, <code>start_timing</code>（実績ST）</td><td>1着率・決まり手内訳（要件1,2）、コース別ST（要件3）、平均ST系ポイント</td></tr>
   </table>
   <p class="note">
     <b>決まり手コード</b>: <code>technique_number</code> は 1=逃げ, 2=差し, 3=まくり, 4=まくり差し, 5=抜き, 6=恵まれ。
@@ -247,19 +247,27 @@
 
 <h3>② boatrace.jp 公式サイト（直接スクレイピング）</h3>
 <div class="card">
-  <p>BoatraceOpenAPIには含まれない「今シリーズの得点率順位」「前検タイム」は、公式サイトのHTMLページを直接取得して
-  <code>cheerio</code>でパースしている（<span class="path">src/lib/scrape.ts</span>）。<code>robots.txt</code>で
-  全許可（<code>Disallow:</code>のみ）を確認済み。</p>
+  <p>BoatraceOpenAPIには含まれない「今シリーズの得点率順位」「前検タイム」「レースタイム（周回タイム）」は、
+  公式サイトのHTMLページを直接取得して<code>cheerio</code>でパースしている（<span class="path">src/lib/scrape.ts</span>）。
+  <code>robots.txt</code>で全許可（<code>Disallow:</code>のみ）を確認済み。</p>
   <table>
     <tr><th>ページ</th><th>URL形式</th><th>用途</th></tr>
     <tr><td>節間得点率一覧</td><td><code>/owpc/pc/race/pointrank?jcd={場コード}&hd={YYYYMMDD}</code></td><td>要件5: 今シリーズ得点率順位</td></tr>
-    <tr><td>モーター/ボート成績・前検タイム</td><td><code>/owpc/pc/race/rankingmotor?jcd={場コード}&hd={YYYYMMDD}</code></td><td>要件6: 今シリーズ前検タイム</td></tr>
+    <tr><td>モーター/ボート成績・前検タイム</td><td><code>/owpc/pc/race/rankingmotor?jcd={場コード}&hd={YYYYMMDD}</code></td><td>要件6: 今シリーズ前検タイム（分析情報ページの前検タイム行）</td></tr>
+    <tr><td>レース結果</td><td><code>/owpc/pc/race/raceresult?rno={レース番号}&jcd={場コード}&hd={YYYYMMDD}</code></td><td>持ちタイム（今節・1枠以外の最速レースタイム）用の<code>race_time</code>取込</td></tr>
   </table>
   <p class="note">
-    ページ構造が変わるとスクレイピングが破綻するリスクがあるため、1スタジアムの取得失敗が他のスタジアムに波及しないよう
-    try/catchで隔離している（<span class="path">src/app/api/cron/sync-series-stats/route.ts</span>）。
+    ページ構造が変わるとスクレイピングが破綻するリスクがあるため、1件（スタジアム/レース）の取得失敗が他に波及しないよう
+    try/catchで隔離している（<span class="path">src/app/api/cron/sync-series-stats/route.ts</span>、
+    <span class="path">src/lib/ingest.ts</span>の<code>ingestRaceTimes()</code>）。
     また「得点率」は初日の結果が出るまでは公式サイト側にデータが存在しない（"データがありません"ページが返る）ため、
     その場合は0件のまま次回実行を待つ。
+  </p>
+  <p class="note">
+    <b>レース結果ページの規模</b>: 得点率・前検タイムは「スタジアム×日」で1リクエストだが、レースタイムは
+    <b>レースごとに1リクエスト</b>が必要（1スタジアム最大12R）。開催中の全スタジアムを毎日取り切ると
+    1日あたり最大250〜300リクエスト程度になる。<code>ingestRaceTimes()</code>は同時実行数6のワーカープールで
+    処理し、失敗したレースは<code>race_time</code>が<code>null</code>のまま残るため次回cronで再取得される。
   </p>
 </div>
 
@@ -270,10 +278,18 @@
   <div class="box"><b>racers</b>選手マスタ<div class="small">racer_number (PK), name, rank_number, branch_number</div></div>
   <div class="box"><b>series</b>シリーズ（節）<div class="small">id (PK), stadium_number, start_date, end_date, title</div></div>
   <div class="box"><b>races</b>レース（決まり手はここ）<div class="small">date+stadium_number+race_number (PK), technique_number, series_id (FK)</div></div>
-  <div class="box"><b>race_entries</b>出走エントリー<div class="small">+entry_number (PK), racer_number, course_number, start_timing, place_number, exhibition_time</div></div>
+  <div class="box"><b>race_entries</b>出走エントリー<div class="small">+entry_number (PK), racer_number, course_number, start_timing, start_rank, place_number, exhibition_time, exhibition_rank, race_time</div></div>
   <div class="box"><b>series_point_ranks</b>得点率（要件5）<div class="small">series_id+racer_number (PK), rank_position, point_rate, points, deduction</div></div>
   <div class="box"><b>series_precheck</b>前検タイム（要件6）<div class="small">series_id+racer_number (PK), rank_position, precheck_time, motor/boat番号・2連対率</div></div>
 </div>
+
+<p class="note">
+  <b>race_entriesの追加カラム（分析情報ページのポイント系指標用）:</b>
+  <code>start_rank</code>・<code>exhibition_rank</code>は、同一レース内の6艇のスタートタイミング／展示タイムを比較した
+  「レース内順位」（1が最速）で、<code>ingestDay()</code>がBoatraceOpenAPIのレースデータだけから算出する
+  （追加のスクレイピング不要）。<code>race_time</code>はboatrace.jpのレース結果ページからのスクレイピングでのみ
+  埋まるため、いずれも<b>この列を追加した日以降に取り込まれたレースからしか値が入らない</b>（過去分は全件バックフィルしていない）。
+</p>
 
 <p><b>シリーズ（節）の自動検出:</b> BoatraceOpenAPIの <code>day_number</code>（開催何日目か）が1に戻ったスタジアムを
 「新シリーズ開始」とみなし、直前の進行中シリーズに<code>end_date</code>を確定してから新しい<code>series</code>行を作成する
@@ -293,15 +309,19 @@
 <table>
   <tr><th>ファイル</th><th>役割</th></tr>
   <tr><td class="path">src/lib/kyotei-api.ts</td><td>BoatraceOpenAPIの日次JSON取得・型定義</td></tr>
-  <tr><td class="path">src/lib/scrape.ts</td><td>boatrace.jpの得点率・前検タイムページのスクレイピング</td></tr>
-  <tr><td class="path">src/lib/ingest.ts</td><td>1日分のデータをracers/races/race_entries/seriesへupsertする共通処理（cron routeとbackfillスクリプトで共用）</td></tr>
-  <tr><td class="path">src/lib/aggregate.ts</td><td>6指標の集計ロジック（Server Componentから呼び出し）</td></tr>
+  <tr><td class="path">src/lib/scrape.ts</td><td>boatrace.jpの得点率・前検タイム・レース結果（レースタイム）ページのスクレイピング</td></tr>
+  <tr><td class="path">src/lib/ingest.ts</td><td><code>ingestDay()</code>: 1日分のデータをracers/races/race_entries/seriesへupsertする共通処理（cron routeとbackfillスクリプトで共用）。
+    同時にレース内のstart_rank/exhibition_rankも算出する。<br><code>ingestRaceTimes()</code>: 確定済みレースについてレース結果ページを
+    スクレイピングし、race_timeを補完（同時実行数6のワーカープール、失敗は次回cronで再取得）</td></tr>
+  <tr><td class="path">src/lib/aggregate.ts</td><td>6指標＋本日のレース分析情報の集計ロジック（Server Componentから呼び出し）</td></tr>
 </table>
 
 <h3>API routes（Vercel上で動作、GitHub ActionsからBearerトークンで認証）</h3>
 <table>
   <tr><th>Route</th><th>処理内容</th></tr>
-  <tr><td class="path">POST /api/cron/sync-day</td><td>指定日（省略時は当日JST）のBoatraceOpenAPIデータを取込。<code>?date=YYYY-MM-DD</code>で任意日を指定可能</td></tr>
+  <tr><td class="path">POST /api/cron/sync-day</td><td>指定日（省略時は当日JST）のBoatraceOpenAPIデータを取込（<code>ingestDay()</code>）後、
+    確定済みレースのレースタイムをスクレイピングして補完（<code>ingestRaceTimes()</code>）。
+    <code>?date=YYYY-MM-DD</code>で任意日を指定可能。<code>maxDuration=60</code></td></tr>
   <tr><td class="path">POST /api/cron/sync-series-stats</td><td>現在進行中の全シリーズ（<code>end_date is null</code>）について、得点率・前検タイムをスクレイピングして更新</td></tr>
 </table>
 <p>認証は <code>Authorization: Bearer &lt;CRON_SECRET&gt;</code> ヘッダーで行い、環境変数 <code>CRON_SECRET</code> と一致しない場合は401を返す。</p>
@@ -325,10 +345,52 @@ BoatraceOpenAPI対応開始日（2026-01-01）から前日までの日次デー�
 <p>データ量がスタジアム単位で高々数千行程度のため、DB側でGROUP BYするSQL/RPCは作らず、
 必要な行をSupabaseから取得してJS側（Node/Next.jsサーバー）で集計する設計にしている。</p>
 
-<h2>7. 画面構成</h2>
+<h2>7. 本日のレース・分析情報</h2>
+<p>
+  トップページ（<span class="path">/</span>）は当初の6指標マトリクスから、レイアウトExcel（<span class="path">assets/レイアウト.xlsx</span>）
+  準拠の「本日のレース」画面へ全面刷新している。各レースの分析情報ページ（<code>getRaceCardAnalysis()</code>）が中心の機能で、
+  出走6艇を横に並べたスプレッドシート風の表（<span class="path">src/components/AnalysisTable.tsx</span>）で表示する。
+</p>
+<table>
+  <tr><th>項目</th><th>データソース・算出方法</th></tr>
+  <tr><td>持ちタイム</td><td>今節（進行中シリーズ）・進入コース≠1の中で<code>race_time</code>が最小のレースを採用</td></tr>
+  <tr><td>前検タイム</td><td><code>series_precheck.precheck_time</code>（今シリーズの前検、要件6と同じ値）</td></tr>
+  <tr><td>枠別着率／コース別決まり手率／決まり手数</td><td>そのレーサーの全国横断の過去出走履歴（<code>race_entries</code>を<code>racer_number</code>で横断検索）を、
+    今日のこのレースでの進入コースで絞り込んで集計</td></tr>
+  <tr><td>平均ST ポイント／平均ST順位 ポイント</td><td>進入コースでの平均ST・平均STレース内順位を、前期・直近6/3/1ヶ月の4期間で出走6艇比較</td></tr>
+  <tr><td>全枠順平均ST ポイント</td><td>全コースでの平均STを、前期・直近3/1ヶ月の3期間（直近6ヶ月は含めない）で比較</td></tr>
+  <tr><td>全枠順平均ST順位 ポイント</td><td>全コースでの平均STレース内順位を、直近3/1ヶ月の2期間のみで比較</td></tr>
+  <tr><td>展示タイム勝率ポイント</td><td>直近1年で展示タイムが出走6艇中1位だったレースに絞り、1位回数・1着率・2連対率・3連対率の4項目で比較</td></tr>
+</table>
+<p>
+  ポイント系5項目はいずれも同じ採点ルール（<code>scoreTop2()</code>）を使う：値を小数点2桁に丸めて出走6艇を比較し、
+  最良1位に2pt・2位に1ptを付与（1位が同値の場合は両方1位扱いで2位は不在）、対象期間・項目数ぶん合計する。
+  分析情報ページには算出根拠を確認できる「＜ポイント詳細＞」表も併設し、<code>scoreTop2()</code>の判定結果を再利用して
+  1位セルを赤・2位セルを黄でハイライトする。
+</p>
+<div class="note">
+  <b>「前期」の定義:</b> ボートレースの選手級別レーティング期間（11/1〜翌4/30が前期、5/1〜10/31が後期）に合わせ、
+  <code>getPreviousZenkiRange()</code>が現在日時点で直近に<b>完了している</b>前期の期間を動的に算出する
+  （進行中の期間は含めない）。前期の全期間を取得できるよう、レーサー履歴取得の開始日は「前期開始日」と「直近1年」の早い方に合わせている。
+</div>
+
+<h2>8. 画面構成</h2>
 <div class="flow">
   <div class="flow-row">
-    <div class="box accent"><b>/</b>ホーム画面<div class="small">24競艇場 × 6メニューのマトリクス表</div></div>
+    <div class="box accent"><b>/</b>ホーム画面（本日のレース）<div class="small">開催中の競艇場を4場×行で並べたグリッド。場名・開催日程</div></div>
+  </div>
+  <div class="arrow">↓ 場をクリック</div>
+  <div class="flow-row">
+    <div class="box accent"><b>/today/[stadiumNumber]</b>本日のレース一覧<div class="small">1〜12Rジャンプボタン＋レース毎の出走レーサー表（枠番色付き）</div></div>
+  </div>
+  <div class="arrow">↓ 分析情報を見る</div>
+  <div class="flow-row">
+    <div class="box accent"><b>/today/[stadiumNumber]/[raceNumber]</b>分析情報<div class="small">出走6艇の分析表＋＜ポイント詳細＞＋レーサーコース別着率（1〜12Rジャンプボタン付き）</div></div>
+  </div>
+</div>
+<div class="flow">
+  <div class="flow-row">
+    <div class="box"><b>/stadiums</b>競艇場を選択<div class="small">24競艇場 × 6メニューのマトリクス表（旧ホーム画面）</div></div>
   </div>
   <div class="arrow">↓ セルをクリック</div>
   <div class="flow-row">
@@ -343,16 +405,18 @@ BoatraceOpenAPI対応開始日（2026-01-01）から前日までの日次デー�
   </div>
 </div>
 <p>各競艇場ページは共通レイアウト（<span class="path">src/app/stadium/[stadiumNumber]/layout.tsx</span>）配下にあり、
-<span class="path">StadiumTabs</span>コンポーネントで6指標間をタブ切り替えできる。デザインは<span class="path">sumo-app</span>の
-配色（背景<code>#FAF6F0</code>、アクセント<code>#967E76</code>）とcard+table中心のレイアウトを踏襲。</p>
+<span class="path">StadiumTabs</span>コンポーネントで6指標間をタブ切り替えできる。配色は当初<span class="path">sumo-app</span>の
+ブラウン系（<code>#967E76</code>）を踏襲していたが、現在は背景<code>#F1F1F2</code>・アクセント青<code>#1995AD</code>（淡色
+<code>#A1D6ED</code>）系に変更している。枠番の背景色（1白/2黒/3赤/4青/5黄/6緑）はレイアウトExcelのセル塗りつぶし色に準拠
+（<span class="path">src/lib/laneColors.ts</span>）。</p>
 
-<h2>8. デプロイ・運用フロー</h2>
+<h2>9. デプロイ・運用フロー</h2>
 <ol>
   <li><b>GitHub</b>: <code>michisuke0629/boat-app</code> リポジトリの <code>main</code> ブランチにpush</li>
   <li><b>Vercel</b>: GitHubリポジトリと連携済み。pushをトリガーに自動ビルド・本番デプロイ（本番URL: <code>https://boat-pi-brown.vercel.app</code>）</li>
   <li><b>GitHub Actions</b>: <span class="path">.github/workflows/cron.yml</span> が1日7回（JST基準）、Vercel上のAPI routeをBearer認証付きで呼び出す
     <ul>
-      <li>23:50 / 翌06:50 — <code>sync-day</code>（レース結果取込）</li>
+      <li>23:50 / 翌06:50 — <code>sync-day</code>（レース結果取込＋レースタイムのスクレイピング補完）</li>
       <li>07:00, 11:00, 15:00, 19:00, 23:30 — <code>sync-series-stats</code>（得点率・前検タイム）</li>
     </ul>
   </li>
@@ -368,13 +432,17 @@ BoatraceOpenAPI対応開始日（2026-01-01）から前日までの日次デー�
   <tr><td><code>APP_URL</code></td><td>GitHub ActionsがAPIを呼ぶ先の本番URL</td><td>GitHub Actions Secrets のみ</td></tr>
 </table>
 
-<h2>9. 既知の制約</h2>
+<h2>10. 既知の制約</h2>
 <ul>
   <li>BoatraceOpenAPIは2026-01-01以降のデータしか提供していないため、サービス開始直後は「直近10場」等の指標が
     指定場数に届かない競艇場がある（画面上に注記表示）。</li>
   <li>得点率・前検タイムはスクレイピングのため過去分は遡れず、稼働開始後に開催されたシリーズから蓄積される。</li>
-  <li>boatrace.jpのページ構造が変わるとスクレイピングが失敗する可能性がある（1スタジアム単位でtry/catchしているため
-    他スタジアムへの影響は限定的）。</li>
+  <li><code>race_time</code>・<code>start_rank</code>・<code>exhibition_rank</code>は列追加後に取り込まれたレースからしか
+    値が入らない。導入時は進行中シリーズ分のみ手動で再取込（バックフィル）しており、それより古いレースは
+    平均ST系ポイント・持ちタイムの算出対象から自然に外れる（値がnullのため）。</li>
+  <li>boatrace.jpのページ構造が変わるとスクレイピングが失敗する可能性がある（1件単位でtry/catchしているため
+    他への影響は限定的）。レース結果ページはレースごとに1リクエストが必要なため、得点率・前検タイムよりスクレイピング
+    量が多く、サイト負荷やブロックのリスクも相対的に高い。</li>
   <li>GitHub Actionsの<code>schedule</code>は指定時刻ちょうどに実行される保証がなく、数分〜十数分程度前後する。</li>
 </ul>
 
