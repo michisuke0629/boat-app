@@ -11,6 +11,9 @@ on:
     - cron: '0 6 * * *'    # 15:00 JST
     - cron: '0 10 * * *'   # 19:00 JST
     - cron: '30 14 * * *'  # 23:30 JST
+    # sync-race-times: レースタイム(boatrace.jpスクレイピング)の取りこぼしを少数件ずつ解消。
+    # 1日分をまとめて処理するとmaxDuration(60秒)を超えるため高頻度・少数件で回す
+    - cron: '*/20 * * * *'
   workflow_dispatch:
     inputs:
       date:
@@ -46,4 +49,13 @@ jobs:
       - name: sync-series-stats を呼び出す
         run: |
           curl -sf -X POST "${{ secrets.APP_URL }}/api/cron/sync-series-stats" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
+
+  sync-race-times:
+    if: github.event.schedule == '*/20 * * * *' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: sync-race-times を呼び出す
+        run: |
+          curl -sf -X POST "${{ secrets.APP_URL }}/api/cron/sync-race-times" \
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"

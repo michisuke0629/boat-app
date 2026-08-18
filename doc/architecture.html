@@ -259,15 +259,18 @@
   <p class="note">
     ページ構造が変わるとスクレイピングが破綻するリスクがあるため、1件（スタジアム/レース）の取得失敗が他に波及しないよう
     try/catchで隔離している（<span class="path">src/app/api/cron/sync-series-stats/route.ts</span>、
-    <span class="path">src/lib/ingest.ts</span>の<code>ingestRaceTimes()</code>）。
+    <span class="path">src/lib/ingest.ts</span>の<code>backfillRaceTimes()</code>）。
     また「得点率」は初日の結果が出るまでは公式サイト側にデータが存在しない（"データがありません"ページが返る）ため、
     その場合は0件のまま次回実行を待つ。
   </p>
   <p class="note">
-    <b>レース結果ページの規模</b>: 得点率・前検タイムは「スタジアム×日」で1リクエストだが、レースタイムは
+    <b>レース結果ページの規模とmaxDuration対策</b>: 得点率・前検タイムは「スタジアム×日」で1リクエストだが、レースタイムは
     <b>レースごとに1リクエスト</b>が必要（1スタジアム最大12R）。開催中の全スタジアムを毎日取り切ると
-    1日あたり最大250〜300リクエスト程度になる。<code>ingestRaceTimes()</code>は同時実行数6のワーカープールで
-    処理し、失敗したレースは<code>race_time</code>が<code>null</code>のまま残るため次回cronで再取得される。
+    1日あたり最大250〜300リクエスト程度になり、Vercelの<code>maxDuration=60</code>秒に収まらずタイムアウトする
+    （2026-08-17・08-18に<code>sync-day-yesterday</code>ジョブが<code>exit code 22</code>で失敗した実際の原因）。
+    そのため<code>sync-day</code>からレースタイム取込を切り離し、専用の<code>backfillRaceTimes()</code>が
+    「着順確定済みだが<code>race_time</code>未取得」のレースを<b>日付降順（直近優先）で30件だけ</b>拾って処理する形にした。
+    同時実行数6のワーカープールで処理し、失敗・未処理のレースは次回以降の<code>sync-race-times</code>cronで再取得される。
   </p>
 </div>
 
@@ -311,18 +314,20 @@
   <tr><td class="path">src/lib/kyotei-api.ts</td><td>BoatraceOpenAPIの日次JSON取得・型定義</td></tr>
   <tr><td class="path">src/lib/scrape.ts</td><td>boatrace.jpの得点率・前検タイム・レース結果（レースタイム）ページのスクレイピング</td></tr>
   <tr><td class="path">src/lib/ingest.ts</td><td><code>ingestDay()</code>: 1日分のデータをracers/races/race_entries/seriesへupsertする共通処理（cron routeとbackfillスクリプトで共用）。
-    同時にレース内のstart_rank/exhibition_rankも算出する。<br><code>ingestRaceTimes()</code>: 確定済みレースについてレース結果ページを
-    スクレイピングし、race_timeを補完（同時実行数6のワーカープール、失敗は次回cronで再取得）</td></tr>
+    同時にレース内のstart_rank/exhibition_rankも算出する。<br><code>backfillRaceTimes(limit)</code>: 着順確定済みだが
+    race_time未取得のレースを日付降順でlimit件だけ拾い、レース結果ページをスクレイピングして補完
+    （同時実行数6のワーカープール、失敗は次回cronで再取得）</td></tr>
   <tr><td class="path">src/lib/aggregate.ts</td><td>6指標＋本日のレース分析情報の集計ロジック（Server Componentから呼び出し）</td></tr>
 </table>
 
 <h3>API routes（Vercel上で動作、GitHub ActionsからBearerトークンで認証）</h3>
 <table>
   <tr><th>Route</th><th>処理内容</th></tr>
-  <tr><td class="path">POST /api/cron/sync-day</td><td>指定日（省略時は当日JST）のBoatraceOpenAPIデータを取込（<code>ingestDay()</code>）後、
-    確定済みレースのレースタイムをスクレイピングして補完（<code>ingestRaceTimes()</code>）。
+  <tr><td class="path">POST /api/cron/sync-day</td><td>指定日（省略時は当日JST）のBoatraceOpenAPIデータを取込（<code>ingestDay()</code>）。
     <code>?date=YYYY-MM-DD</code>で任意日を指定可能。<code>maxDuration=60</code></td></tr>
   <tr><td class="path">POST /api/cron/sync-series-stats</td><td>現在進行中の全シリーズ（<code>end_date is null</code>）について、得点率・前検タイムをスクレイピングして更新</td></tr>
+  <tr><td class="path">POST /api/cron/sync-race-times</td><td>着順確定済みだがrace_time未取得のレースを日付降順で30件だけ処理（<code>backfillRaceTimes(30)</code>）。
+    20分おきに実行し、複数回に分けてレースタイムの取りこぼしを解消する。<code>maxDuration=60</code></td></tr>
 </table>
 <p>認証は <code>Authorization: Bearer &lt;CRON_SECRET&gt;</code> ヘッダーで行い、環境変数 <code>CRON_SECRET</code> と一致しない場合は401を返す。</p>
 

@@ -183,27 +183,40 @@ function addDays(dateStr: string, delta: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-export interface IngestRaceTimesResult {
-  date: string;
-  raceCount: number;
+export interface BackfillRaceTimesResult {
+  attempted: number;
   errorCount: number;
+  remainingBefore: number; // このバッチの処理を始める前に残っていた未取得件数（レース単位）
 }
 
 // レースタイムはBoatraceOpenAPIに含まれないため、boatrace.jpのレース結果ページを別途スクレイピングして補完する。
-// 結果が確定している（race.result有）レースのみ対象。ingestDayとは独立して呼べる（cronから当日分ingest後に実行）。
-export async function ingestRaceTimes(races: ApiRace[], date: string): Promise<IngestRaceTimesResult> {
-  const hd = date.replace(/-/g, '');
-
-  // 既にrace_timeを取得済みのレースはスキップする（前日分の再取込ジョブが当日分と重複して
-  // 全件スクレイピングし直すとタイムアウトするため。sync-day-today実行時点で未確定だった分のみが対象になる）
-  const { data: existing } = await supabaseAdmin
+// 1日分をまとめて処理すると件数が多い日（100レース超）にVercelのmaxDuration(60秒)を超えてしまうため、
+// 着順確定済み(place_number有)なのにrace_time未取得のレースを日付降順（直近優先）でlimit件だけ拾って処理する。
+// レースタイム機能導入前の過去分も含めて未取得件数が数万件あるため、直近のデータから先に埋めていく。
+// sync-race-timesジョブから高頻度で呼び出し、複数回に分けて取りこぼしを解消する想定。
+export async function backfillRaceTimes(limit: number): Promise<BackfillRaceTimesResult> {
+  const { count: remainingBefore } = await supabaseAdmin
     .from('race_entries')
-    .select('stadium_number, race_number')
-    .eq('date', date)
-    .not('race_time', 'is', null);
-  const doneKeys = new Set((existing ?? []).map((e) => `${e.stadium_number}-${e.race_number}`));
+    .select('date, stadium_number, race_number', { count: 'exact', head: true })
+    .not('place_number', 'is', null)
+    .is('race_time', null);
 
-  const targets = races.filter((r) => r.result != null && !doneKeys.has(`${r.stadium_number}-${r.race_number}`));
+  // 1レース最大6エントリーなので、limit件のレースを賄うのに十分な行数を余裕を持って取得する
+  const { data, error: fetchError } = await supabaseAdmin
+    .from('race_entries')
+    .select('date, stadium_number, race_number')
+    .not('place_number', 'is', null)
+    .is('race_time', null)
+    .order('date', { ascending: false })
+    .limit(limit * 6);
+  if (fetchError) throw new Error(`race_entries取得失敗: ${fetchError.message}`);
+
+  const raceMap = new Map<string, { date: string; stadium_number: number; race_number: number }>();
+  for (const row of data ?? []) {
+    const key = `${row.date}_${row.stadium_number}_${row.race_number}`;
+    if (!raceMap.has(key)) raceMap.set(key, row);
+  }
+  const targets = Array.from(raceMap.values()).slice(0, limit);
 
   const CONCURRENCY = 6;
   const queue = [...targets];
@@ -214,6 +227,7 @@ export async function ingestRaceTimes(races: ApiRace[], date: string): Promise<I
       const race = queue.shift();
       if (!race) break;
       try {
+        const hd = race.date.replace(/-/g, '');
         const results = await fetchRaceResult(race.stadium_number, race.race_number, hd);
         if (results.length === 0) continue;
         const { error } = await supabaseAdmin.from('race_entries').upsert(
@@ -238,5 +252,5 @@ export async function ingestRaceTimes(races: ApiRace[], date: string): Promise<I
 
   await Promise.all(Array.from({ length: CONCURRENCY }, () => worker()));
 
-  return { date, raceCount: targets.length, errorCount };
+  return { attempted: targets.length, errorCount, remainingBefore: remainingBefore ?? 0 };
 }
