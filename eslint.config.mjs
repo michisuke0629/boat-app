@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // ネストしたgit worktree（.claude/worktrees/*）内のビルド成果物も除外
+    "**/.next/**",
   ]),
 ]);
 

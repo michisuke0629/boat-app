@@ -193,7 +193,17 @@ export interface IngestRaceTimesResult {
 // 結果が確定している（race.result有）レースのみ対象。ingestDayとは独立して呼べる（cronから当日分ingest後に実行）。
 export async function ingestRaceTimes(races: ApiRace[], date: string): Promise<IngestRaceTimesResult> {
   const hd = date.replace(/-/g, '');
-  const targets = races.filter((r) => r.result != null);
+
+  // 既にrace_timeを取得済みのレースはスキップする（前日分の再取込ジョブが当日分と重複して
+  // 全件スクレイピングし直すとタイムアウトするため。sync-day-today実行時点で未確定だった分のみが対象になる）
+  const { data: existing } = await supabaseAdmin
+    .from('race_entries')
+    .select('stadium_number, race_number')
+    .eq('date', date)
+    .not('race_time', 'is', null);
+  const doneKeys = new Set((existing ?? []).map((e) => `${e.stadium_number}-${e.race_number}`));
+
+  const targets = races.filter((r) => r.result != null && !doneKeys.has(`${r.stadium_number}-${r.race_number}`));
 
   const CONCURRENCY = 6;
   const queue = [...targets];
